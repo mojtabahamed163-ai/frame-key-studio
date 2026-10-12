@@ -5,6 +5,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { publicPlatformScript } from "./publicConfig";
 import { appRouter } from "../routers";
+import { registerLeadRoutes } from "../leads";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -18,6 +19,7 @@ async function startServer() {
   app.get("/api/platform/config.js", (_req, res) => {
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
   });
+  registerLeadRoutes(app);
   registerOAuthRoutes(app);
   // tRPC API
   app.use(
