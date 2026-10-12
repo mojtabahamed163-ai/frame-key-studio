@@ -102,6 +102,7 @@ export default function Home() {
           <a href="#process" onClick={closeMenu}>How it works</a>
           <a href="#pricing" onClick={closeMenu}>Pricing</a>
           <a href="#faq" onClick={closeMenu}>FAQ</a>
+          <a className="main-nav__studio" href="/studio" onClick={closeMenu}>Try the local editor <ArrowRight size={13} aria-hidden="true" /></a>
         </nav>
 
         <a className="button button--dark header-cta" href="#inquiry">
