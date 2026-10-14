@@ -365,7 +365,8 @@ export default function Studio() {
       invalidateClipOutputs();
       commitProject(next);
       setSelectedForBatch(suggestions.map((clip) => clip.id));
-      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.` : "The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.");
+      const reviewCount = suggestions.filter((clip) => clip.quality === "review").length;
+      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}` : "The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.");
       if (suggestions.length) setStep("select");
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
@@ -803,10 +804,12 @@ export default function Studio() {
             <div className="studio-suggestion-column">
               <div className="studio-section-heading"><div><span className="studio-mini-label">{project.clips.length} SUGGESTIONS</span><h3>Short cuts with context.</h3></div><button type="button" className="studio-text-button" onClick={addManualClip}><Plus size={14} />Add manual clip</button></div>
               {!project.clips.length && <div className="studio-empty-state"><Scissors size={25} /><h3>No candidate clips yet.</h3><p>Try speech analysis with the correct language, import captions, or add a manual cut.</p></div>}
+              {project.clips.some((clip) => clip.qualityWarning) && <p className="studio-inline-warning"><AlertTriangle size={15} />Some suggestions have unreliable or repetitive transcript text. Review the transcript and preview before publishing.</p>}
               <div className="clip-suggestion-list">{project.clips.map((clip, index) => <article className={`clip-suggestion${clip.id === project.selectedClipId ? " is-selected" : ""}`} key={clip.id}>
                 <div className="clip-suggestion__top"><span className="clip-suggestion__index">{String(index + 1).padStart(2, "0")}</span><span>{formatTime(clip.start)} — {formatTime(clip.end)}</span><span className="clip-suggestion__duration">{Math.round(clip.end - clip.start)} sec</span></div>
                 <h4>{clip.transcript || clip.selectedTitle || "Manual clip"}</h4>
                 <ul>{clip.reasons.slice(0, 3).map((reason) => <li key={reason}><Check size={13} />{reason}</li>)}</ul>
+                {clip.qualityWarning && <p className="studio-inline-warning"><AlertTriangle size={14} />{clip.qualityWarning}</p>}
                 <button type="button" className="studio-button studio-button--small" onClick={() => chooseClip(clip)}><span>{clip.id === project.selectedClipId ? "Selected — edit clip" : "Preview and edit"}</span><ArrowRight size={15} /></button>
               </article>)}</div>
               {project.words.length > 0 && <details className="studio-transcript-details"><summary><FileText size={16} />Review full transcript ({project.words.length} timed words)<span>Local text only</span></summary><p>{project.words.map((word) => word.text).join(" ")}</p></details>}

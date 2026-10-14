@@ -22,6 +22,8 @@ export interface ClipSuggestion {
   start: number;
   end: number;
   score: number;
+  quality?: "reliable" | "review";
+  qualityWarning?: string;
   reasons: string[];
   transcript: string;
   hookOptions: string[];

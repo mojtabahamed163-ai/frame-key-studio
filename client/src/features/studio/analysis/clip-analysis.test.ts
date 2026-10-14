@@ -36,6 +36,25 @@ describe("local transcript analysis", () => {
     expect(suggestions.every((clip) => clip.start >= complete[0].start)).toBe(true);
   });
 
+  it("rejects a repetitive transcript instead of presenting it as a usable clip", () => {
+    const repeated = Array.from({ length: 34 }, (_, index) => ["not", "that", "is", "the", "same", "point"][index % 6]);
+    repeated[repeated.length - 1] = "point.";
+    expect(suggestClips(wordsFrom(repeated))).toHaveLength(0);
+  });
+
+  it("rejects a sentence that overlaps the previous sentence and starts mid-thought", () => {
+    const words = [
+      { id: "previous", text: "The previous thought ends.", start: 0, end: 1 },
+      ...wordsFrom(["This", "new", "thought", "should", "not", "start", "inside", "the", "previous", "one", "because", "it", "is", "incomplete."], 0.55),
+    ];
+    expect(suggestClips(words)).toHaveLength(0);
+  });
+
+  it("does not rank a long lowercase continuation as a clean clip opening", () => {
+    const words = wordsFrom(["why", "doing", "it", "was", "to", "move", "through", "the", "home.", "The", "complete", "point", "helps", "new", "buyers", "compare", "costs."]);
+    expect(suggestClips(words).every((clip) => !clip.transcript.startsWith("why doing"))).toBe(true);
+  });
+
   it("ties up to three opening choices to safe sentence start times", () => {
     const texts = [
       ["Why", "buyers", "should", "always", "compare", "the", "total", "monthly", "payment", "before", "choosing", "a", "specific", "home", "in", "today's", "market?"],

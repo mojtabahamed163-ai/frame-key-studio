@@ -6,6 +6,7 @@ interface Sentence {
   end: number;
   text: string;
   complete: boolean;
+  startsAtBoundary: boolean;
 }
 
 const HOOK_TERMS = /\b(why|how|what|when|mistake|truth|secret|never|always|first|best|before|after|because|important|remember|number|cost|price|market|buyer|seller|home|property|real estate)\b/i;
@@ -48,32 +49,53 @@ export function sentenceGroups(words: TranscriptWord[]): Sentence[] {
     .sort((a, b) => a.start - b.start);
   const sentences: Sentence[] = [];
   let current: TranscriptWord[] = [];
+  let currentStartsAtBoundary = true;
+  let previousWord: TranscriptWord | undefined;
   const finish = () => {
     if (!current.length) return;
     const text = joinWords(current);
-    if (text) sentences.push({ words: current, start: current[0].start, end: current[current.length - 1].end, text, complete: /[.!?…][\"')\]]?$/.test(current[current.length - 1].text.trim()) });
+    if (text) sentences.push({
+      words: current,
+      start: current[0].start,
+      end: current[current.length - 1].end,
+      text,
+      complete: /[.!?…]["')\]]?$/.test(current[current.length - 1].text.trim()),
+      startsAtBoundary: currentStartsAtBoundary,
+    });
     current = [];
+    currentStartsAtBoundary = true;
   };
 
   for (const word of ordered) {
     const previous = current[current.length - 1];
     const gap = previous ? word.start - previous.end : 0;
+    if (!current.length) {
+      const previousGap = previousWord ? word.start - previousWord.end : 0;
+      const followsTerminal = previousWord && /[.!?…]["')\]]?$/.test(previousWord.text.trim()) && previousGap >= -0.35;
+      currentStartsAtBoundary = !previousWord || previousGap > 1.35 || Boolean(followsTerminal);
+    }
     if (previous && gap > 1.35) finish();
     current.push(word);
     if (/[.!?…]["')\]]?$/.test(word.text.trim())) finish();
+    previousWord = word;
   }
   finish();
   return sentences;
 }
 
-function scoreWindow(sentences: Sentence[], start: number, end: number, text: string): { score: number; reasons: string[] } {
+function scoreWindow(sentences: Sentence[], start: number, end: number, text: string): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
   const duration = end - start;
+  const clipWords = sentences.flatMap((sentence) => sentence.words);
   const words = text.split(/\s+/).filter(Boolean);
   const reasons: string[] = [];
   let score = 0;
-  const durationScore = 3.5 - Math.min(3.5, Math.abs(duration - 28) / 13);
+  const durationScore = 3.5 - Math.min(3.5, Math.abs(duration - 28) / 16);
   score += durationScore;
-  if (duration >= 12 && duration <= 45) reasons.push("A complete short-form segment (12–45 seconds)");
+  if (duration >= 15 && duration <= 60) reasons.push("A complete short-form segment (15–60 seconds)");
+  else if (duration >= 8 && duration < 15) {
+    score -= 1.5;
+    reasons.push("A shorter fallback segment; review the context before publishing");
+  }
   if (/[?!]/.test(text)) { score += 1.5; reasons.push("Contains a question or emphatic line"); }
   if (/\b\d+(?:\.\d+)?%?\b/.test(text)) { score += 1.25; reasons.push("Includes a concrete number"); }
   if (HOOK_TERMS.test(text)) { score += 1.1; reasons.push("Opens with a specific topic or useful claim"); }
@@ -82,7 +104,47 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
   if (pauses.length) { score += 0.45; reasons.push("Has a natural speech pause"); }
   const fillerCount = words.filter((word) => FILLERS.has(word.toLowerCase().replace(/[^a-z]/g, ""))).length;
   score -= Math.min(1.2, fillerCount * 0.15);
-  return { score, reasons };
+  const normalized = words.map((word) => word.toLowerCase().replace(/[^a-z0-9']/g, "")).filter(Boolean);
+  const uniqueRatio = normalized.length ? new Set(normalized).size / normalized.length : 0;
+  const bigrams = new Map<string, number>();
+  for (let index = 1; index < normalized.length; index += 1) {
+    const bigram = `${normalized[index - 1]} ${normalized[index]}`;
+    bigrams.set(bigram, (bigrams.get(bigram) ?? 0) + 1);
+  }
+  const repeatedBigrams = [...bigrams.values()].filter((count) => count >= 2).length;
+  const warningParts: string[] = [];
+  const firstToken = clipWords[0]?.text.trim() ?? "";
+  const firstSentence = sentences[0];
+  const startsLowercase = /^[a-z]/.test(firstToken);
+  const startsWithFragment = startsLowercase && (firstSentence?.words.length ?? 0) > 3;
+  const startsWithWeakFragment = startsLowercase && (firstSentence?.words.length ?? 0) <= 2 && !HOOK_TERMS.test(firstSentence?.text ?? "");
+  const overlappingWords = clipWords.slice(1).filter((word, index) => word.start < clipWords[index].end - 0.08).length;
+  if (startsWithFragment) {
+    score -= 3;
+    warningParts.push("the clip starts with a likely continuation rather than a clean sentence");
+  }
+  if (startsWithWeakFragment) {
+    score -= 3;
+    warningParts.push("the opening phrase is too short and lacks a clear topic");
+  }
+  if (overlappingWords >= 2) {
+    score -= 2.5;
+    warningParts.push("the speech timestamps overlap unusually");
+  }
+  if (normalized.length >= 20 && uniqueRatio < 0.52) {
+    score -= 3.5;
+    warningParts.push("the transcript repeats the same words unusually often");
+  }
+  if (repeatedBigrams >= 2) {
+    score -= Math.min(3, repeatedBigrams * 0.9);
+    warningParts.push("the transcript contains repeated phrases");
+  }
+  if (normalized.length >= 24 && fillerCount / normalized.length > 0.16) {
+    score -= 1.5;
+    warningParts.push("the transcript contains many filler words");
+  }
+  const qualityWarning = warningParts.length ? `Review required: ${warningParts.join(" and ")}.` : undefined;
+  return { score, reasons, quality: qualityWarning ? "review" : "reliable", qualityWarning };
 }
 
 function makePostCopy(text: string, start: number): Pick<ClipSuggestion, "titleOptions" | "description" | "hashtags" | "callsToAction"> {
@@ -122,11 +184,12 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
       const next = sentences[endIndex];
       if (group.length && next.end - group[0].start > 45) break;
       group.push(next);
-      if (group.some((sentence) => !sentence.complete)) continue;
+      if (group.some((sentence) => !sentence.complete || !sentence.startsAtBoundary)) continue;
       const duration = next.end - group[0].start;
-      if (duration < 8 || duration > 45) continue;
+      if (duration < 8 || duration > 60) continue;
       const text = group.map((sentence) => sentence.text).join(" ");
-      const { score, reasons } = scoreWindow(group, group[0].start, next.end, text);
+      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text);
+      if (qualityWarning && score < 3.5) continue;
       const wordsInClip = group.flatMap((sentence) => sentence.words);
       const copy = makePostCopy(text, group[0].start);
       const hookCandidates = group.slice(0, 3).filter((sentence) => next.end - sentence.start >= 8);
@@ -136,6 +199,8 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
         start: group[0].start,
         end: next.end,
         score,
+        quality,
+        qualityWarning,
         reasons: reasons.length ? reasons : ["Built from complete sentences in the recording"],
         transcript: text,
         hookOptions,
@@ -150,7 +215,10 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
   const ranked = candidates.sort((a, b) => b.score - a.score);
   const selected: ClipSuggestion[] = [];
   for (const candidate of ranked) {
-    const overlaps = selected.some((current) => Math.min(current.end, candidate.end) - Math.max(current.start, candidate.start) > Math.min(current.end - current.start, candidate.end - candidate.start) * 0.45);
+    const overlaps = selected.some((current) => {
+      const overlap = Math.max(0, Math.min(current.end, candidate.end) - Math.max(current.start, candidate.start));
+      return overlap > Math.min(current.end - current.start, candidate.end - candidate.start) * 0.25;
+    });
     if (!overlaps) selected.push(candidate);
     if (selected.length >= maxClips) break;
   }
