@@ -25,6 +25,7 @@ const LANGUAGE_OPTIONS = [
   ["it", "Italian"], ["pt", "Portuguese"], ["ar", "Arabic"], ["nl", "Dutch"], ["ja", "Japanese"], ["zh", "Chinese"],
 ] as const;
 const ZIP_LIMIT = 64 * 1024 * 1024;
+const LARGE_FILE_WARNING_BYTES = 750 * 1024 * 1024;
 
 interface SavedOutput { result: ExportResult; clipId: string; clipLabel: string }
 type ClipRenderStatus = "queued" | "rendering" | "ready" | "failed" | "cancelled";
@@ -285,7 +286,9 @@ export default function Studio() {
       setClipProgress({});
       setRenderErrors({});
       setSelectedForBatch([]);
-      setNotice("Video selected. It has not been uploaded to the website.");
+      setNotice(file.size >= LARGE_FILE_WARNING_BYTES
+        ? "Video selected locally. This larger file may use substantial memory during analysis or export; close other heavy tabs and consider saving the source locally."
+        : "Video selected. It has not been uploaded to the website.");
       void saveProject(next).then(() => listProjects().then(setSavedProjects)).catch(() => setSaveState("error"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The browser could not read this video format.");
@@ -323,13 +326,17 @@ export default function Studio() {
     if (!project || !sourceFile) return;
     setError("");
     setNotice("Saving the original source in this browser’s private local storage…");
-    const saved = await saveSourceToOpfs(project.id, sourceFile);
-    if (!saved) {
-      setError("This browser could not store the source file locally. Project notes still auto-save; keep the original video file to reopen it.");
-      return;
+    try {
+      const saved = await saveSourceToOpfs(project.id, sourceFile);
+      if (!saved) {
+        setError("This browser could not store the source file locally. Project notes still auto-save; keep the original video file to reopen it.");
+        return;
+      }
+      commitProject({ ...project, sourceSavedInOpfs: true });
+      setNotice("Source video saved on this device. It was not uploaded.");
+    } catch (cause) {
+      setError(cause instanceof Error ? `The source could not be saved locally: ${cause.message}` : "The source could not be saved locally. Keep the original video file to reopen it.");
     }
-    commitProject({ ...project, sourceSavedInOpfs: true });
-    setNotice("Source video saved on this device. It was not uploaded.");
   }
 
   async function runTranscription() {
@@ -767,6 +774,7 @@ export default function Studio() {
                   <span>{project.sourceSavedInOpfs ? "OPFS" : "Project notes auto-save; source file does not"}</span>
                 </div>
               </div>}
+              {sourceFile && sourceFile.size >= LARGE_FILE_WARNING_BYTES && <p className="studio-inline-warning"><AlertTriangle size={15} />This is a larger local file. Speech analysis is chunked, but browser memory and codec support still depend on the device. Export longer clips one at a time when possible.</p>}
               {sourceFile && project && <div className="studio-analysis-box">
                 <div className="studio-panel-heading"><span className="studio-panel-heading__index">AI</span><div><p>LOCAL SPEECH ANALYSIS</p><h3>Find the moments in the words.</h3></div></div>
                 <p className="studio-small-copy">Whisper Tiny runs in a worker on this device. First analysis may download about 41 MB of model files plus a 26.9 MB ONNX browser runtime (transfer compression and cache vary). Your video and transcript are not uploaded.</p>

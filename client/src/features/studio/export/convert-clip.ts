@@ -276,6 +276,9 @@ export async function exportClip(options: {
     conversion = await Conversion.init({
       input,
       output,
+      tracks: "primary",
+      copy: false,
+      tags: {},
       trim: { start: clip.start, end: clip.end },
       video: {
         codec: format === "mp4" ? "avc" : format === "webm-vp8" ? "vp8" : "vp9",
