@@ -17,7 +17,7 @@ import { translateCues, type TranslationProgress } from "@/features/studio/model
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
-import { requestSaveTarget, supportedOutputFormat, exportClip } from "@/features/studio/export/convert-clip";
+import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
 import "@/features/studio/studio.css";
 
 const LANGUAGE_OPTIONS = [
@@ -59,7 +59,7 @@ function sourceCues(project: StudioProject): CaptionCue[] {
 }
 
 function estimateOutputBytes(clips: ClipSuggestion[], settings: StudioSettings): number {
-  const bitrate = settings.outputHeight === 1920 ? 8_128_000 : 4_128_000;
+  const bitrate = videoBitrateForHeight(settings.outputHeight) + 128_000;
   return clips.reduce((sum, clip) => sum + Math.max(0, clip.end - clip.start) * bitrate / 8 + 2_500_000, 0);
 }
 
@@ -121,6 +121,7 @@ export default function Studio() {
   }, [project, settings.targetLanguage, settings.captionMode, activeClip]);
   const currentClipCues = useMemo(() => activeClip ? currentCues.filter((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end) : currentCues, [activeClip, currentCues]);
   const estimatedZipBytes = project ? estimateOutputBytes(project.clips.filter((clip) => selectedForBatch.includes(clip.id)), settings) : 0;
+  const portraitQuality = project ? portraitCropQuality(project.width, project.height, settings.outputHeight) : null;
   const hasSavePicker = typeof getPickerWindow().showSaveFilePicker === "function";
 
   useEffect(() => {
@@ -862,8 +863,10 @@ export default function Studio() {
                 {isTrackingFace && faceProgress && <ProgressCard label={`Checking frame ${faceProgress.completed} of ${faceProgress.total}`} progress={faceProgress.completed / Math.max(1, faceProgress.total)} />}
                 {settings.smartFraming && faceKeyframes.length === 0 && <p className="studio-inline-warning"><AlertTriangle size={14} />No saved face track for this clip. Run face detection or turn auto framing off.</p>}
                 {settings.smartFraming && faceKeyframes.some((frame) => frame.framingSafe === false) && <p className="studio-inline-warning"><AlertTriangle size={14} />The detected face box does not fit in the 9:16 crop at every sampled moment. Review the preview and adjust manual framing if needed.</p>}
+                <label className="studio-field">Portrait framing mode<select value={settings.framingMode} onChange={(event) => changeSettings({ framingMode: event.target.value as StudioSettings["framingMode"] })}><option value="fill">Fill portrait frame · crop sides</option><option value="full">Show full video · studio background</option></select><small>{settings.framingMode === "full" ? "Keeps the complete landscape frame visible without stretching, inside a dark 9:16 studio canvas; preview uses a softened video background." : "Fills 9:16 by cropping the sides. Use face tracking or the manual slider to keep the subject visible."}</small></label>
                 <label className="studio-field studio-range-field">Manual horizontal framing<input type="range" min="0" max="1" step="0.01" value={settings.manualCropX} onChange={(event) => changeSettings({ manualCropX: Number(event.target.value) })} /><small>Use this if automatic face framing is unavailable or off-center.</small></label>
                 <label className="studio-field">Export resolution<select value={settings.outputHeight} onChange={(event) => changeSettings({ outputHeight: Number(event.target.value) as StudioSettings["outputHeight"] })}><option value={1920}>1080 × 1920 · higher quality</option><option value={1280}>720 × 1280 · lighter files</option></select></label>
+                {portraitQuality?.isUpscaled && <p className="studio-inline-warning"><AlertTriangle size={14} />This portrait crop uses about {portraitQuality.cropWidth}×{portraitQuality.cropHeight} source pixels and will be enlarged to {portraitQuality.outputWidth}×{portraitQuality.outputHeight}. Higher output dimensions cannot restore detail missing from the original crop.</p>}
                 <div className="studio-codec-note"><span className={outputFormat ? "codec-ready" : "codec-warn"} />{outputFormat ? `${outputFormat === "mp4" ? "MP4 / H.264 + AAC" : outputFormat === "webm-vp8" ? "WebM / VP8 + Opus" : "WebM / VP9 + Opus"} detected on this device` : "This browser does not report a compatible local video and audio encoder."}</div>
               </section>
               <BrandControls settings={settings} onChange={changeSettings} />

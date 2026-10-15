@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { centerPortraitOnFace } from "./face-tracking";
+import { centerPortraitOnFace, limitSubjectShift } from "./face-tracking";
 
 describe("local portrait face framing", () => {
+  it("limits abrupt subject movement while allowing gradual tracking", () => {
+    const next = limitSubjectShift({ x: 0.5, y: 0.5 }, { x: 0.95, y: 0.5 }, 0.18);
+    expect(next.x).toBeCloseTo(0.68, 5);
+    expect(next.y).toBe(0.5);
+  });
+
   it("keeps a face near the edge inside the horizontal-source crop when possible", () => {
     const framed = centerPortraitOnFace({ xMin: 20, yMin: 250, width: 110, height: 140 }, 1920, 1080, 0.1, 0.5);
     const cropWidth = (9 / 16) / (1920 / 1080);

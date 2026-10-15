@@ -46,6 +46,17 @@ export function centerPortraitOnFace(box: FaceBox, videoWidth: number, videoHeig
   return { x: fallbackX, y: fallbackY, framingSafe: false };
 }
 
+export function limitSubjectShift(previous: { x: number; y: number } | null, next: { x: number; y: number }, maxShift = 0.18): { x: number; y: number } {
+  if (!previous) return next;
+  const distance = Math.hypot(next.x - previous.x, next.y - previous.y);
+  if (distance <= maxShift) return next;
+  const amount = maxShift / Math.max(0.0001, distance);
+  return {
+    x: previous.x + (next.x - previous.x) * amount,
+    y: previous.y + (next.y - previous.y) * amount,
+  };
+}
+
 function waitForEvent(video: HTMLVideoElement, eventName: "loadedmetadata" | "seeked"): Promise<void> {
   return new Promise((resolve, reject) => {
     const onReady = () => { cleanup(); resolve(); };
@@ -76,7 +87,7 @@ export async function trackLargestFace(
   const faceDetection = await import("@tensorflow-models/face-detection");
   const detector = await faceDetection.createDetector(faceDetection.SupportedModels.MediaPipeFaceDetector, {
     runtime: "tfjs",
-    modelType: "short",
+    modelType: "full",
     maxFaces: 3,
   });
   const url = URL.createObjectURL(file);
@@ -118,7 +129,8 @@ export async function trackLargestFace(
         .sort((a, b) => b.rank - a.rank);
       const best = ranked[0];
       if (best) {
-        const smoothed = previous ? { x: previous.x * 0.35 + best.x * 0.65, y: previous.y * 0.35 + best.y * 0.65 } : { x: best.x, y: best.y };
+        const candidate = previous ? { x: previous.x * 0.35 + best.x * 0.65, y: previous.y * 0.35 + best.y * 0.65 } : { x: best.x, y: best.y };
+        const smoothed = limitSubjectShift(previous, candidate);
         const framed = centerPortraitOnFace(best.box, video.videoWidth, video.videoHeight, smoothed.x, smoothed.y);
         previous = { x: framed.x, y: framed.y };
         keyframes.push({ time: time - clipStart, ...framed, confidence: best.confidence });

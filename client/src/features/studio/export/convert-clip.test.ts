@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { cropForPortrait } from "./convert-clip";
+import { cropForPortrait, portraitCropQuality, videoBitrateForHeight } from "./convert-clip";
+
+describe("video bitrate profile", () => {
+  it("uses more headroom for both supported portrait output sizes", () => {
+    expect(videoBitrateForHeight(1280)).toBe(6_000_000);
+    expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+  });
+});
 
 describe("portrait crop geometry", () => {
+  it("reports when 1080 portrait output must enlarge a narrow landscape crop", () => {
+    const quality = portraitCropQuality(1920, 1080, 1920);
+    expect(quality.cropWidth).toBe(608);
+    expect(quality.cropHeight).toBe(1080);
+    expect(quality.isUpscaled).toBe(true);
+    expect(quality.scale).toBeGreaterThan(1.7);
+  });
+
   it("rounds a wide-source portrait crop to integer coordinates and dimensions", () => {
     const crop = cropForPortrait(1920, 1080, 9 / 16, 0.5, 0.5);
     expect(crop).toEqual({ left: 656, top: 0, width: 608, height: 1080 });

@@ -42,6 +42,7 @@ export interface ClipSuggestion {
 export type CaptionStyle = "clean" | "bold" | "editorial";
 export type CaptionMode = "word" | "block";
 export type LogoPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type FramingMode = "fill" | "full";
 export type OutputPlatform = "generic" | "tiktok" | "instagram-reels" | "youtube-shorts";
 export type StepId = "upload" | "select" | "edit" | "export";
 
@@ -61,6 +62,7 @@ export interface StudioSettings extends BrandSettings {
   silenceThresholdSeconds: number;
   peakNormalize: boolean;
   smartFraming: boolean;
+  framingMode: FramingMode;
   manualCropX: number;
   manualCropY: number;
   showCaptions: boolean;
@@ -115,6 +117,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   silenceThresholdSeconds: 1.2,
   peakNormalize: false,
   smartFraming: false,
+  framingMode: "fill",
   manualCropX: 0.5,
   manualCropY: 0.5,
   showCaptions: true,

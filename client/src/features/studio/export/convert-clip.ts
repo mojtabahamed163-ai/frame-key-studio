@@ -31,12 +31,16 @@ export type OutputFormat = "mp4" | "webm-vp9" | "webm-vp8";
 export interface ExportProgress { progress: number; phase: string; detail: string }
 export interface ExportResult { filename: string; mimeType: string; blob?: Blob; byteLength: number; streamed: boolean }
 
+export function videoBitrateForHeight(height: number): number {
+  return height === 1920 ? 12_000_000 : 6_000_000;
+}
+
 export async function supportedOutputFormat(height: number): Promise<OutputFormat | null> {
   if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis)) return null;
   const width = Math.round(height * 9 / 16);
   const videoSupported = async (codec: string) => {
     try {
-      const result = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: height === 1920 ? 8_000_000 : 4_000_000, framerate: 30 });
+      const result = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: videoBitrateForHeight(height), framerate: 30 });
       return Boolean(result.supported);
     } catch { return false; }
   };
@@ -53,11 +57,14 @@ export async function supportedOutputFormat(height: number): Promise<OutputForma
 export async function requestSaveTarget(name: string, format: OutputFormat): Promise<FileWritable | null> {
   const picker = (window as SavePickerWindow).showSaveFilePicker;
   if (!picker) return null;
-  const handle = await picker({
+  const pickerRequest = picker({
     suggestedName: name,
     types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
-  });
-  return handle.createWritable();
+  }).then((handle) => handle.createWritable());
+  // Some embedded browsers expose the API but do not surface its native dialog.
+  // Do not block encoding forever in that case; the caller will use BufferTarget.
+  const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));
+  return Promise.race([pickerRequest, timeout]);
 }
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
@@ -76,6 +83,13 @@ export function cropForPortrait(width: number, height: number, targetAspect: num
   const left = clamp(Math.round(safeCenterX * sourceWidth - cropWidth / 2), 0, sourceWidth - cropWidth);
   const top = clamp(Math.round(safeCenterY * sourceHeight - cropHeight / 2), 0, sourceHeight - cropHeight);
   return { left, top, width: cropWidth, height: cropHeight };
+}
+
+export function portraitCropQuality(sourceWidth: number, sourceHeight: number, outputHeight: number) {
+  const outputWidth = Math.round(outputHeight * 9 / 16);
+  const crop = cropForPortrait(sourceWidth, sourceHeight, 9 / 16, 0.5, 0.5);
+  const scale = Math.max(outputWidth / crop.width, outputHeight / crop.height);
+  return { cropWidth: crop.width, cropHeight: crop.height, outputWidth, outputHeight, scale, isUpscaled: scale > 1.01 };
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
@@ -230,14 +244,20 @@ export async function exportClip(options: {
   onProgress: (progress: ExportProgress) => void;
 }): Promise<ExportResult> {
   const { file, project, clip, cues, faceKeyframes, format, writable, signal, onProgress } = options;
+  const debug = (phase: string, detail?: unknown) => {
+    console.log("[Frame & Key export]", phase, detail ?? "");
+  };
   const duration = clip.end - clip.start;
   if (duration <= 0 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
   const height = project.settings.outputHeight;
   const width = Math.round(height * 9 / 16);
-  const estimatedBytes = duration * ((height === 1920 ? 8_000_000 : 4_000_000) + 128_000) / 8 + 4_000_000;
+  const estimatedBytes = duration * (videoBitrateForHeight(height) + 128_000) / 8 + 4_000_000;
   if (!writable && estimatedBytes > 84 * 1024 * 1024) throw new Error("This browser cannot stream directly to a file. Use 720p, shorten the clip, or export it on a browser that supports direct file saving.");
   const ranges = remapRanges(project, clip);
+  debug("start", { format, fileBytes: file.size, clipStart: clip.start, clipEnd: clip.end, ranges });
+  debug("measurePeak:start", { enabled: project.settings.peakNormalize });
   const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end) : 0;
+  debug("measurePeak:done", { peak });
   const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
   const logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
   const canvas = document.createElement("canvas");
@@ -245,6 +265,11 @@ export async function exportClip(options: {
   canvas.height = height;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new Error("Canvas encoding is unavailable in this browser.");
+  const fullVideoCanvas = document.createElement("canvas");
+  fullVideoCanvas.width = width;
+  fullVideoCanvas.height = Math.max(1, Math.min(height, Math.round(width * project.height / Math.max(1, project.width))));
+  const fullVideoContext = fullVideoCanvas.getContext("2d", { alpha: false });
+  if (!fullVideoContext) throw new Error("Full-video canvas is unavailable in this browser.");
   let firstVideoTime: number | null = null;
   let firstAudioTime: number | null = null;
   let bytesWritten = 0;
@@ -273,6 +298,7 @@ export async function exportClip(options: {
 
   try {
     onProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
+    debug("Conversion.init:start");
     conversion = await Conversion.init({
       input,
       output,
@@ -282,7 +308,7 @@ export async function exportClip(options: {
       trim: { start: clip.start, end: clip.end },
       video: {
         codec: format === "mp4" ? "avc" : format === "webm-vp8" ? "vp8" : "vp9",
-        quality: new Quality({ bitrate: height === 1920 ? 8_000_000 : 4_000_000 }),
+        quality: new Quality({ bitrate: videoBitrateForHeight(height) }),
         frameRate: 30,
         processedWidth: width,
         processedHeight: height,
@@ -295,9 +321,19 @@ export async function exportClip(options: {
           const center = project.settings.smartFraming
             ? faceCenterAt(faceKeyframes, localTime, project.settings.manualCropX, project.settings.manualCropY)
             : { x: project.settings.manualCropX, y: project.settings.manualCropY };
-          const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
           context.clearRect(0, 0, width, height);
-          sample.drawWithFit(context, { fit: "cover", crop });
+          if (project.settings.framingMode === "full") {
+            context.fillStyle = "#17261f";
+            context.fillRect(0, 0, width, height);
+            fullVideoContext.clearRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+            fullVideoContext.fillStyle = "#17261f";
+            fullVideoContext.fillRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+            sample.drawWithFit(fullVideoContext, { fit: "fill" });
+            context.drawImage(fullVideoCanvas, 0, (height - fullVideoCanvas.height) / 2, width, fullVideoCanvas.height);
+          } else {
+            const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
+            sample.drawWithFit(context, { fit: "cover", crop });
+          }
           const absoluteTime = clip.start + localTime;
           if (project.settings.showCaptions) {
             const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
@@ -332,18 +368,22 @@ export async function exportClip(options: {
         },
       },
     });
+    debug("Conversion.init:done", { isValid: conversion.isValid, discardedTracks: conversion.discardedTracks.map((item) => item.reason) });
     if (!conversion.isValid) {
       const discarded = conversion.discardedTracks.map((item) => item.reason).filter(Boolean).join("; ");
       throw new Error(discarded || "This video codec is not supported for export in this browser.");
     }
     conversion.onProgress = (progress) => onProgress({ progress, phase: "encoding", detail: `${Math.round(progress * 100)}% — encoding stays on this device` });
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+    debug("Conversion.execute:start");
     await conversion.execute();
+    debug("Conversion.execute:done", { outputState: output.state });
     if (target instanceof BufferTarget) {
       const buffer = target.buffer;
       if (!buffer) throw new Error("The export completed without a file buffer.");
       outputBlob = new Blob([buffer], { type: mimeFor(format) });
       bytesWritten = buffer.byteLength;
+      debug("BufferTarget:done", { bytesWritten });
     }
     onProgress({ progress: 1, phase: "complete", detail: "Your file is ready on this device" });
     return {
@@ -354,6 +394,7 @@ export async function exportClip(options: {
       streamed: Boolean(writable),
     };
   } catch (error) {
+    debug("failed", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
     if (output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => undefined);
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     const message = error instanceof Error ? error.message : "Export failed on this device.";
