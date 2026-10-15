@@ -64,7 +64,8 @@ export function VideoPreview({
           onLoadedMetadata={(event) => {
             const video = event.currentTarget;
             setVideoSize({ src, width: video.videoWidth, height: video.videoHeight });
-            if (clip) video.currentTime = clip.start;
+            const requestedTime = Number.isFinite(currentTime) ? currentTime : (clip?.start ?? 0);
+            video.currentTime = Math.max(0, Math.min(video.duration || requestedTime, requestedTime));
           }}
           style={settings.framingMode === "full" ? undefined : { objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%` }}
         />

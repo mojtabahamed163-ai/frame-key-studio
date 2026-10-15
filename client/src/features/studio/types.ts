@@ -6,6 +6,13 @@ export interface TranscriptWord {
   score?: number;
 }
 
+export type TranscriptionWarningCode =
+  | "timestamp-outside-audio-window"
+  | "timestamp-outside-source-tail"
+  | "audio-activity-after-last-word"
+  | "suspicious-word-duration"
+  | "conflicting-overlap-words";
+
 export interface SpeechRange { start: number; end: number }
 export type FaceTrackingState = "detected" | "held" | "manual";
 export interface CropKeyframe { time: number; x: number; y: number; confidence: number; framingSafe?: boolean; state?: FaceTrackingState }
@@ -93,6 +100,7 @@ export interface StudioProject {
   clips: ClipSuggestion[];
   selectedClipId: string | null;
   faceKeyframesByClip: Record<string, CropKeyframe[]>;
+  transcriptionWarnings?: TranscriptionWarningCode[];
   settings: StudioSettings;
   sourceSavedInOpfs: boolean;
 }

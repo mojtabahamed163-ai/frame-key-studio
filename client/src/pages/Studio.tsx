@@ -15,7 +15,7 @@ import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
-import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type VideoMetadata } from "@/features/studio/types";
+import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type TranscriptionWarningCode, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
 import "@/features/studio/studio.css";
@@ -56,6 +56,20 @@ function prettyDate(timestamp: number): string {
 
 function sourceCues(project: StudioProject): CaptionCue[] {
   return project.editedCues.length ? project.editedCues : buildCaptionCues(project.words);
+}
+
+function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
+  const messages: string[] = [];
+  if (codes.includes("timestamp-outside-source-tail")) messages.push("Whisper returned word timestamps beyond the final audio window; those out-of-range words were excluded.");
+  else if (codes.includes("timestamp-outside-audio-window")) messages.push("Whisper returned word timestamps outside an audio window; those out-of-range words were excluded.");
+  if (codes.includes("suspicious-word-duration")) messages.push("Whisper returned a word with an implausibly long timestamp; it was excluded, so review the nearby transcript.");
+  if (codes.includes("audio-activity-after-last-word")) messages.push("Sustained audio activity continues after the last accepted word. Listen to the final seconds for a missing phrase.");
+  if (codes.includes("conflicting-overlap-words")) messages.push("Overlapping audio windows disagreed on words; review the transcript around those boundaries.");
+  return messages.join(" ");
+}
+
+function needsSourceTailReview(codes: TranscriptionWarningCode[]): boolean {
+  return codes.includes("timestamp-outside-source-tail") || codes.includes("audio-activity-after-last-word");
 }
 
 function estimateOutputBytes(clips: ClipSuggestion[], settings: StudioSettings): number {
@@ -352,12 +366,14 @@ export default function Studio() {
     const controller = new AbortController();
     analysisController.current = controller;
     try {
-      const words = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      const words = transcription.words;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
         words,
+        transcriptionWarnings: transcription.warnings,
         editedCues: buildCaptionCues(words),
         translatedCues: [],
         translatedLanguage: "none",
@@ -370,7 +386,8 @@ export default function Studio() {
       commitProject(next);
       setSelectedForBatch(suggestions.map((clip) => clip.id));
       const reviewCount = suggestions.filter((clip) => clip.quality === "review").length;
-      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}` : "The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.");
+      const warningNotice = transcription.warnings.length ? " Whisper also flagged timestamp, overlap, or end-of-audio activity for review." : "";
+      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}${warningNotice}` : `The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.${warningNotice}`);
       if (suggestions.length) setStep("select");
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
@@ -411,6 +428,19 @@ export default function Studio() {
     setStep(nextStep);
     setCurrentTime(clip.start);
     if (videoRef.current) { videoRef.current.currentTime = clip.start; videoRef.current.pause(); }
+  }
+
+  function reviewSourceTail() {
+    if (!project) return;
+    const clip = activeClip ?? project.clips[0];
+    if (clip) commitProject({ ...project, selectedClipId: clip.id, step: "edit" });
+    setStep("edit");
+    const reviewTime = Math.max(0, project.duration - Math.min(5, project.duration));
+    setCurrentTime(reviewTime);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = reviewTime;
+    }
   }
 
   function updateClip(clipId: string, patch: Partial<ClipSuggestion>) {
@@ -497,6 +527,30 @@ export default function Studio() {
     }
   }
 
+  function addManualCaptionCue() {
+    if (!project || !activeClip) return;
+    if (currentTime >= activeClip.end - 0.05) {
+      setNotice("Extend the clip end to include the audio you reviewed, then add a caption line at the playhead.");
+      return;
+    }
+    const start = Math.max(activeClip.start, Math.min(currentTime, activeClip.end - 0.05));
+    const cue: CaptionCue = {
+      id: `manual-cue-${Date.now()}`,
+      start,
+      end: Math.min(activeClip.end, start + 1.6),
+      text: "",
+      words: [],
+    };
+    invalidateClipOutputs([activeClip.id]);
+    commitProject({
+      ...project,
+      editedCues: [...sourceCues(project), cue].sort((a, b) => a.start - b.start),
+      translatedCues: [],
+      translatedLanguage: "none",
+    });
+    setNotice("Type the words you hear in the new caption line. Its timing and audio will be included in the next export.");
+  }
+
   async function importCaptions(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.currentTarget.value = "";
@@ -581,7 +635,7 @@ export default function Studio() {
     if (!activeClip) return;
     const duration = activeClip.end - activeClip.start;
     const ranges = project && settings.silenceRemoval && project.words.length
-      ? buildClipSpeechRanges(project.words, activeClip.start, activeClip.end, settings.silenceThresholdSeconds)
+      ? buildClipSpeechRanges(project.words, activeClip.start, activeClip.end, settings.silenceThresholdSeconds, project.editedCues)
       : [{ start: 0, end: duration }];
     const cues = mapCaptionCuesToOutput(chooseSubtitleForExport(activeClip), activeClip.start, activeClip.end, ranges);
     const text = kind === "srt" ? exportSrt(cues) : exportVtt(cues);
@@ -754,6 +808,12 @@ export default function Studio() {
         {(error || notice) && <div className={`studio-alert${error ? " studio-alert--error" : " studio-alert--notice"}`} role={error ? "alert" : "status"}>
           {error ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{error || notice}</span>{error && <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button>}
         </div>}
+        {project?.transcriptionWarnings?.length ? <div className="studio-inline-warning studio-transcription-warning" role="status">
+          <AlertTriangle size={16} /><span>{transcriptionWarningText(project.transcriptionWarnings)}</span>
+          <button type="button" className="studio-text-button" onClick={needsSourceTailReview(project.transcriptionWarnings) ? reviewSourceTail : () => setStep("select")} disabled={!sourceFile}>
+            {needsSourceTailReview(project.transcriptionWarnings) ? "Review final audio" : "Review transcript"}
+          </button>
+        </div> : null}
 
         <section className="studio-step-panel" aria-labelledby="step-title">
           <div className="studio-step-panel__heading">
@@ -840,7 +900,7 @@ export default function Studio() {
                 {settings.targetLanguage !== "none" && project.sourceLanguage !== "en" && <p className="studio-inline-warning"><AlertTriangle size={14} />Choose English under Speech language in Add source and run analysis again; Auto-detect does not set the source language for translation.</p>}
                 {isTranslating && translationProgress && <><ProgressCard label={translationProgress.detail} progress={translationProgress.progress} /><button type="button" className="studio-text-button" onClick={() => translationController.current?.abort()}><X size={14} />Stop translation</button></>}
                 {project.translatedLanguage !== "none" && <p className="studio-inline-warning"><AlertTriangle size={14} />Translated lines are phrase-timed to the source; review meaning and timing. Word-level alignment is not inferred.</p>}
-                <CaptionCueEditor cues={currentCues} clipStart={activeClip?.start ?? 0} clipEnd={activeClip?.end ?? project.duration} onChange={updateCaptionCue} />
+                <CaptionCueEditor cues={currentCues} clipStart={activeClip?.start ?? 0} clipEnd={activeClip?.end ?? project.duration} onChange={updateCaptionCue} onAddLine={addManualCaptionCue} />
                 {activeClip && <div className="caption-export-links"><button type="button" onClick={() => exportCaptionFile("srt")}><Download size={14} />Download SRT</button><button type="button" onClick={() => exportCaptionFile("vtt")}><Download size={14} />Download VTT</button><label><input type="checkbox" checked={settings.showCaptions} onChange={(event) => changeSettings({ showCaptions: event.target.checked })} /> Burn captions into video</label></div>}
               </section>}
             </div>

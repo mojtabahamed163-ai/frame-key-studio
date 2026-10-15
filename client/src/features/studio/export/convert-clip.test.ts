@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { cropForPortrait, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
+import { cropForPortrait, exportClip, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
+import type { ClipSuggestion, StudioProject } from "../types";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
@@ -24,6 +25,23 @@ describe("save picker fallback", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("export source boundaries", () => {
+  it("refuses a clip that extends beyond the source duration", async () => {
+    const project = { duration: 30.75 } as StudioProject;
+    const clip = { start: 20, end: 38.38 } as ClipSuggestion;
+    await expect(exportClip({
+      file: new File([], "source.mp4"),
+      project,
+      clip,
+      cues: [],
+      faceKeyframes: [],
+      format: "webm-vp9",
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+    })).rejects.toThrow("outside the source video");
   });
 });
 

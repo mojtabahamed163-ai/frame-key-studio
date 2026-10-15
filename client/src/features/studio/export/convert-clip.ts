@@ -245,7 +245,7 @@ async function measurePeak(file: File, start: number, end: number): Promise<numb
 function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
   const duration = Math.max(0.05, clip.end - clip.start);
   if (!project.settings.silenceRemoval || !project.words.length) return [{ start: 0, end: duration }];
-  return buildClipSpeechRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds);
+  return buildClipSpeechRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds, project.editedCues);
 }
 
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
@@ -268,6 +268,9 @@ export async function exportClip(options: {
   };
   const duration = clip.end - clip.start;
   if (duration <= 0 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
+  if (!Number.isFinite(clip.start) || !Number.isFinite(clip.end) || clip.start < 0 || clip.end > project.duration + 0.05) {
+    throw new Error("The clip boundaries are outside the source video. Correct the in/out points before exporting.");
+  }
   const height = project.settings.outputHeight;
   const width = Math.round(height * 9 / 16);
   const estimatedBytes = duration * (videoBitrateForHeight(height) + 128_000) / 8 + 4_000_000;

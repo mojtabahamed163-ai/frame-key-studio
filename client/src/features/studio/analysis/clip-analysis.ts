@@ -150,7 +150,7 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     score -= 1.5;
     warningParts.push("the transcript contains many filler words");
   }
-  if (sourceDuration != null && Number.isFinite(sourceDuration) && sourceDuration > 0 && end >= sourceDuration - 1.25) {
+  if (sourceDuration != null && Number.isFinite(sourceDuration) && sourceDuration > 0 && end >= sourceDuration - 2) {
     warningParts.push("the clip ends close to the source tail; check for speech omitted by transcription");
   }
   const qualityWarning = warningParts.length ? `Review required: ${warningParts.join(" and ")}.` : undefined;
@@ -191,7 +191,15 @@ function formatClock(seconds: number): string {
 export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDuration?: number): ClipSuggestion[] {
   const limit = Number.isFinite(maxClips) ? Math.max(0, Math.floor(maxClips)) : 0;
   if (limit === 0) return [];
-  const sentences = sentenceGroups(words);
+  const safeWords = words.flatMap((word) => {
+    if (!Number.isFinite(word.start) || !Number.isFinite(word.end) || word.end <= word.start) return [];
+    if (sourceDuration == null || !Number.isFinite(sourceDuration) || sourceDuration <= 0) return [word];
+    if (word.start < -0.18 || word.start >= sourceDuration || word.end > sourceDuration + 0.18) return [];
+    const start = Math.max(0, word.start);
+    const end = Math.min(sourceDuration, word.end);
+    return end - start >= 0.04 ? [{ ...word, start, end }] : [];
+  });
+  const sentences = sentenceGroups(safeWords);
   if (!sentences.length) return [];
   const candidates: ClipSuggestion[] = [];
 
@@ -236,7 +244,21 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDurati
       const overlap = Math.max(0, Math.min(current.end, candidate.end) - Math.max(current.start, candidate.start));
       return overlap > Math.min(current.end - current.start, candidate.end - candidate.start) * 0.25;
     });
-    if (!overlaps) selected.push(candidate);
+    const candidateTokens = candidate.transcript.toLocaleLowerCase().normalize("NFKC").match(/[\p{L}\p{N}']+/gu) ?? [];
+    const candidateNgrams = new Set(candidateTokens.length < 6
+      ? candidateTokens
+      : candidateTokens.slice(0, -2).map((token, index) => `${token} ${candidateTokens[index + 1]} ${candidateTokens[index + 2]}`));
+    const nearDuplicate = selected.some((current) => {
+      const tokens = current.transcript.toLocaleLowerCase().normalize("NFKC").match(/[\p{L}\p{N}']+/gu) ?? [];
+      const ngrams = new Set(tokens.length < 6
+        ? tokens
+        : tokens.slice(0, -2).map((token, index) => `${token} ${tokens[index + 1]} ${tokens[index + 2]}`));
+      if (!candidateNgrams.size || !ngrams.size) return false;
+      let shared = 0;
+      for (const gram of candidateNgrams) if (ngrams.has(gram)) shared += 1;
+      return shared / Math.min(candidateNgrams.size, ngrams.size) >= 0.86;
+    });
+    if (!overlaps && !nearDuplicate) selected.push(candidate);
     if (selected.length >= limit) break;
   }
   return selected.sort((a, b) => a.start - b.start);
@@ -286,10 +308,13 @@ export function speechKeepRanges(words: TranscriptWord[], start: number, end: nu
   return ranges.filter((range) => range.end - range.start >= 0.04);
 }
 
-export function buildClipSpeechRanges(words: TranscriptWord[], start: number, end: number, thresholdSeconds: number): SpeechRange[] {
+export function buildClipSpeechRanges(words: TranscriptWord[], start: number, end: number, thresholdSeconds: number, manualCues: CaptionCue[] = []): SpeechRange[] {
   if (end <= start) return [];
   const duration = end - start;
-  const ranges = speechKeepRanges(words, start, end, thresholdSeconds)
+  const manualWords: TranscriptWord[] = manualCues
+    .filter((cue) => !cue.words.length && cue.text.trim() && cue.end > start && cue.start < end)
+    .map((cue) => ({ id: cue.id, text: cue.text, start: cue.start, end: cue.end }));
+  const ranges = speechKeepRanges([...words, ...manualWords], start, end, thresholdSeconds)
     .map((range) => ({ start: Math.max(0, Math.min(duration, range.start - start)), end: Math.max(0, Math.min(duration, range.end - start)) }))
     .filter((range) => range.end > range.start);
   return ranges.length ? ranges : [{ start: 0, end: duration }];
@@ -320,6 +345,7 @@ export function mapCaptionCuesToOutput(cues: CaptionCue[], clipStart: number, cl
   const orderedRanges = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start);
   if (!orderedRanges.length) return [];
   return cues.flatMap((cue) => {
+    if (!cue.text.trim()) return [];
     const sourceStart = Math.max(clipStart, cue.start);
     const sourceEnd = Math.min(clipEnd, cue.end);
     if (sourceEnd <= sourceStart) return [];
@@ -349,9 +375,9 @@ export function formatVttTime(seconds: number): string {
 }
 
 export function toSrt(cues: CaptionCue[]): string {
-  return cues.map((cue, index) => `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`).join("\n\n");
+  return cues.filter((cue) => cue.text.trim()).map((cue, index) => `${index + 1}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}`).join("\n\n");
 }
 
 export function toVtt(cues: CaptionCue[]): string {
-  return `WEBVTT\n\n${cues.map((cue) => `${formatVttTime(cue.start)} --> ${formatVttTime(cue.end)}\n${cue.text}`).join("\n\n")}`;
+  return `WEBVTT\n\n${cues.filter((cue) => cue.text.trim()).map((cue) => `${formatVttTime(cue.start)} --> ${formatVttTime(cue.end)}\n${cue.text}`).join("\n\n")}`;
 }

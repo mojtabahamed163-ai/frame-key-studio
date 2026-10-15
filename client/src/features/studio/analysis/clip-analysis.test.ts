@@ -99,6 +99,20 @@ describe("local transcript analysis", () => {
     expect(suggestClips(words, 0)).toEqual([]);
   });
 
+  it("does not produce clips from words well beyond the source duration", () => {
+    const withinSource = wordsFrom(["The", "housing", "market", "changed", "this", "year", "and", "buyers", "should", "compare", "the", "full", "monthly", "cost", "before", "choosing", "a", "property", "because", "repairs", "change", "the", "final", "payment."]);
+    const beyondSource = wordsFrom(["This", "hallucinated", "ending", "must", "not", "extend", "the", "clip", "past", "the", "actual", "video", "duration", "by", "several", "seconds."], 30);
+    const suggestions = suggestClips([...withinSource, ...beyondSource], 3, 16);
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.every((clip) => clip.start >= 0 && clip.end <= 16)).toBe(true);
+  });
+
+  it("does not recommend the same transcript twice at separated timestamps", () => {
+    const sentence = "The housing market changed this year and buyers should compare the full monthly cost before choosing a property because repairs can change the final payment.".split(" ");
+    const suggestions = suggestClips([...wordsFrom(sentence, 0), ...wordsFrom(sentence, 30)], 3);
+    expect(suggestions).toHaveLength(1);
+  });
+
   it("ties up to three opening choices to safe sentence start times", () => {
     const texts = [
       ["Why", "buyers", "should", "always", "compare", "the", "total", "monthly", "payment", "before", "choosing", "a", "specific", "home", "in", "today's", "market?"],
@@ -133,9 +147,20 @@ describe("local transcript analysis", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]).toMatchObject({ start: 0.5, end: 3, text: cue.text });
   });
+  it("omits blank draft caption rows from SRT, VTT, and exported cue timelines", () => {
+    const blank = { id: "manual-draft", start: 1, end: 2, text: "   ", words: [] };
+    expect(toSrt([blank])).toBe("");
+    expect(toVtt([blank])).toBe("WEBVTT\n\n");
+    expect(mapCaptionCuesToOutput([blank], 0, 4, [{ start: 0, end: 4 }])).toEqual([]);
+  });
   it("preserves a manual clip when transcript speech ranges contain no words", () => {
     const words = wordsFrom(["speech."], 30);
     expect(buildClipSpeechRanges(words, 0, 12, 1.2)).toEqual([{ start: 0, end: 12 }]);
+  });
+
+  it("keeps manually corrected caption audio during silence removal", () => {
+    const cue = { id: "manual-cue", start: 4, end: 5, text: "Corrected words from the recording.", words: [] };
+    expect(buildClipSpeechRanges([], 0, 10, 1.2, [cue])).toEqual([{ start: 3.88, end: 5.12 }]);
   });
 
   it("preserves small natural boundaries and removes only long pauses", () => {

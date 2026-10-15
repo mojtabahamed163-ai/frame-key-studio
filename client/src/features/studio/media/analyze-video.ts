@@ -1,5 +1,5 @@
 import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from "mediabunny";
-import type { TranscriptWord, VideoMetadata } from "../types";
+import type { TranscriptWord, TranscriptionWarningCode, VideoMetadata } from "../types";
 
 export interface AnalysisProgress {
   stage: "metadata" | "audio" | "model" | "transcribing";
@@ -19,9 +19,106 @@ interface WorkerReply {
   message?: string;
 }
 
+export interface TranscriptionResult {
+  words: TranscriptWord[];
+  warnings: TranscriptionWarningCode[];
+}
+
+export interface FittedWordTime { start: number; end: number }
+
 const TARGET_RATE = 16_000;
-const CHUNK_SECONDS = 30;
-const OVERLAP_SECONDS = 2;
+const TIMESTAMP_TOLERANCE_SECONDS = 0.18;
+const MIN_WORD_DURATION_SECONDS = 0.04;
+export const MAX_WORD_DURATION_SECONDS = 1.5;
+export const TRANSCRIPTION_CHUNK_SECONDS = 24;
+export const TRANSCRIPTION_OVERLAP_SECONDS = 4;
+
+export function wordBelongsToChunkWindow(start: number, end: number, chunkStartSeconds: number, chunkNumber: number): boolean {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+  const ownedFrom = chunkNumber === 0 ? chunkStartSeconds : chunkStartSeconds + TRANSCRIPTION_OVERLAP_SECONDS;
+  return (start + end) / 2 >= ownedFrom;
+}
+
+export function fitWordToAudioWindow(start: number, end: number, windowStart: number, windowEnd: number): FittedWordTime | null {
+  if (![start, end, windowStart, windowEnd].every(Number.isFinite) || end <= start || windowEnd <= windowStart) return null;
+  if (end - start > MAX_WORD_DURATION_SECONDS) return null;
+  if (start < windowStart - TIMESTAMP_TOLERANCE_SECONDS || end > windowEnd + TIMESTAMP_TOLERANCE_SECONDS) return null;
+  if (start >= windowEnd || end <= windowStart) return null;
+  const fittedStart = Math.max(windowStart, start);
+  const fittedEnd = Math.min(windowEnd, end);
+  if (fittedEnd - fittedStart < MIN_WORD_DURATION_SECONDS) return null;
+  return { start: fittedStart, end: fittedEnd };
+}
+
+function normalizedWord(text: string): string {
+  return text.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}']/gu, "");
+}
+
+export function isDuplicateOverlapWord(candidate: Pick<TranscriptWord, "text" | "start" | "end">, existing: TranscriptWord[]): boolean {
+  const token = normalizedWord(candidate.text);
+  if (!token) return false;
+  const midpoint = (candidate.start + candidate.end) / 2;
+  const candidateDuration = candidate.end - candidate.start;
+  return existing.some((word) => {
+    if (normalizedWord(word.text) !== token) return false;
+    const existingMidpoint = (word.start + word.end) / 2;
+    const intersection = Math.min(candidate.end, word.end) - Math.max(candidate.start, word.start);
+    const minimumDuration = Math.min(candidateDuration, word.end - word.start);
+    return Math.abs(existingMidpoint - midpoint) <= 0.18 || intersection >= minimumDuration * 0.35;
+  });
+}
+
+function overlapsDifferentWord(candidate: Pick<TranscriptWord, "text" | "start" | "end">, existing: TranscriptWord[]): boolean {
+  const token = normalizedWord(candidate.text);
+  const candidateDuration = candidate.end - candidate.start;
+  return existing.some((word) => {
+    if (normalizedWord(word.text) === token) return false;
+    const intersection = Math.min(candidate.end, word.end) - Math.max(candidate.start, word.start);
+    return intersection >= Math.min(candidateDuration, word.end - word.start) * 0.4;
+  });
+}
+
+export type ChunkWordDisposition = "accept" | "duplicate" | "conflict";
+
+export function classifyChunkWord(
+  candidate: Pick<TranscriptWord, "text" | "start" | "end">,
+  existing: TranscriptWord[],
+  chunkStartSeconds: number,
+  chunkNumber: number,
+): ChunkWordDisposition {
+  if (chunkNumber === 0) return "accept";
+  if (isDuplicateOverlapWord(candidate, existing)) return "duplicate";
+  const inLeadingOverlap = !wordBelongsToChunkWindow(candidate.start, candidate.end, chunkStartSeconds, chunkNumber);
+  if (inLeadingOverlap && overlapsDifferentWord(candidate, existing)) return "conflict";
+  return "accept";
+}
+
+export function hasSustainedAudioActivityAfterLastWord(
+  samples: Float32Array,
+  sampleRate: number,
+  windowStart: number,
+  lastWordEnd: number,
+  sourceEnd: number,
+  rmsThreshold = 0.015,
+): boolean {
+  if (!samples.length || sampleRate <= 0) return false;
+  const reviewStart = Math.max(windowStart, lastWordEnd + 0.18);
+  const audioEnd = Math.min(sourceEnd, windowStart + samples.length / sampleRate);
+  if (audioEnd - reviewStart < 0.3) return false;
+  const firstFrame = Math.max(0, Math.floor((reviewStart - windowStart) * sampleRate));
+  const lastFrame = Math.min(samples.length, Math.ceil((audioEnd - windowStart) * sampleRate));
+  const blockFrames = Math.max(1, Math.floor(sampleRate * 0.1));
+  let consecutiveActiveBlocks = 0;
+  for (let offset = firstFrame; offset < lastFrame; offset += blockFrames) {
+    const stop = Math.min(lastFrame, offset + blockFrames);
+    let squareTotal = 0;
+    for (let index = offset; index < stop; index += 1) squareTotal += (samples[index] ?? 0) ** 2;
+    const rms = Math.sqrt(squareTotal / Math.max(1, stop - offset));
+    consecutiveActiveBlocks = rms >= rmsThreshold ? consecutiveActiveBlocks + 1 : 0;
+    if (consecutiveActiveBlocks >= 3) return true;
+  }
+  return false;
+}
 
 export async function inspectVideo(file: File): Promise<VideoMetadata> {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -103,7 +200,7 @@ function recognize(worker: Worker, audio: Float32Array, offsetSeconds: number, l
       if (data.type === "model-progress") {
         onProgress({ stage: "model", progress: Math.max(0, Math.min(1, data.progress ?? 0)), detail: data.status ?? "Downloading the local model" });
       } else if (data.type === "progress") {
-        onProgress({ stage: "transcribing", progress: 0, detail: data.detail ?? "Transcribing a 30-second audio window" });
+        onProgress({ stage: "transcribing", progress: 0, detail: data.detail ?? `Transcribing a ${TRANSCRIPTION_CHUNK_SECONDS}-second audio window` });
       } else if (data.type === "error") {
         cleanup();
         reject(new Error(data.message ?? "The local speech model could not run."));
@@ -124,11 +221,15 @@ export async function transcribeVideo(
   language: string,
   signal: AbortSignal,
   onProgress: (progress: AnalysisProgress) => void,
-): Promise<TranscriptWord[]> {
+): Promise<TranscriptionResult> {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const worker = createWorker();
   const outputWords: TranscriptWord[] = [];
+  const warningCodes = new Set<TranscriptionWarningCode>();
   let wordId = 0;
+  let lastAudioWindow: Float32Array<ArrayBufferLike> = new Float32Array();
+  let lastAudioWindowStart = 0;
+  let lastAudioWindowEnd = 0;
   try {
     const audioTrack = await input.getPrimaryAudioTrack();
     if (!audioTrack) throw new Error("This video has no audio track. You can still set clip points manually, but speech analysis needs audio.");
@@ -146,16 +247,41 @@ export async function transcribeVideo(
       if (signal.aborted) throw new DOMException("Analysis cancelled.", "AbortError");
       const mono = concatenate(chunks, sampleCount);
       const chunkDuration = mono.length / sampleRate;
-      const carryFrames = Math.min(Math.round(sampleRate * OVERLAP_SECONDS), mono.length);
+      const carryFrames = Math.min(Math.round(sampleRate * TRANSCRIPTION_OVERLAP_SECONDS), mono.length);
       const carry = mono.slice(mono.length - carryFrames);
       const nextChunkStart = chunkStartSeconds + (mono.length - carryFrames) / sampleRate;
+      const windowEnd = Math.min(duration, chunkStartSeconds + chunkDuration);
+      lastAudioWindow = mono;
+      lastAudioWindowStart = chunkStartSeconds;
+      lastAudioWindowEnd = windowEnd;
       const audio = resampleLinear(mono, sampleRate);
       const replies = await recognize(worker, audio, chunkStartSeconds, language, signal, onProgress);
-      const overlapFloor = chunkNumber === 0 ? chunkStartSeconds : chunkStartSeconds + OVERLAP_SECONDS;
       for (const item of replies) {
-        if (!item.text.trim() || item.start == null || item.end == null || item.end <= item.start) continue;
-        if (item.start + (item.end - item.start) / 2 < overlapFloor) continue;
-        outputWords.push({ id: `w-${wordId++}`, text: item.text, start: item.start, end: item.end, score: item.score });
+        if (!item.text.trim() || item.start == null || item.end == null || !Number.isFinite(item.start) || !Number.isFinite(item.end)) continue;
+        const outsideWindow = item.start < chunkStartSeconds - 0.05 || item.end > windowEnd + 0.05;
+        const inSourceTail = windowEnd >= duration - 0.05;
+        if (outsideWindow) {
+          warningCodes.add("timestamp-outside-audio-window");
+          if (inSourceTail) warningCodes.add("timestamp-outside-source-tail");
+        }
+        const fitted = fitWordToAudioWindow(item.start, item.end, chunkStartSeconds, windowEnd);
+        if (!fitted) {
+          if (item.end - item.start > MAX_WORD_DURATION_SECONDS) warningCodes.add("suspicious-word-duration");
+          if (item.end > windowEnd + TIMESTAMP_TOLERANCE_SECONDS || item.start < chunkStartSeconds - TIMESTAMP_TOLERANCE_SECONDS) {
+            warningCodes.add("timestamp-outside-audio-window");
+            if (inSourceTail) warningCodes.add("timestamp-outside-source-tail");
+          }
+          continue;
+        }
+        const candidate: TranscriptWord = { id: `w-${wordId}`, text: item.text, start: fitted.start, end: fitted.end, score: item.score };
+        const disposition = classifyChunkWord(candidate, outputWords, chunkStartSeconds, chunkNumber);
+        if (disposition === "duplicate") continue;
+        if (disposition === "conflict") {
+          warningCodes.add("conflicting-overlap-words");
+          continue;
+        }
+        outputWords.push(candidate);
+        wordId += 1;
       }
       chunkNumber += 1;
       const coveredUntil = Math.min(duration, chunkStartSeconds + chunkDuration);
@@ -178,11 +304,15 @@ export async function transcribeVideo(
         sample.close();
       }
       const secondsInChunk = sampleCount / sampleRate;
-      if (secondsInChunk >= CHUNK_SECONDS) await sendChunk(chunkStart);
+      if (secondsInChunk >= TRANSCRIPTION_CHUNK_SECONDS) await sendChunk(chunkStart);
     }
     if (chunkNumber === 0 || newFramesSinceChunk > 0) await sendChunk(chunkStart);
+    const lastWordEnd = outputWords.reduce((maximum, word) => Math.max(maximum, word.end), 0);
+    if (lastAudioWindowEnd >= duration - 0.05 && hasSustainedAudioActivityAfterLastWord(lastAudioWindow, sampleRate, lastAudioWindowStart, lastWordEnd, duration)) {
+      warningCodes.add("audio-activity-after-last-word");
+    }
     onProgress({ stage: "transcribing", progress: 1, detail: "Speech analysis complete" });
-    return outputWords.sort((a, b) => a.start - b.start);
+    return { words: outputWords.sort((a, b) => a.start - b.start), warnings: [...warningCodes] };
   } finally {
     worker.terminate();
     input.dispose();

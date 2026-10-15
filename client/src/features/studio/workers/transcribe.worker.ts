@@ -25,8 +25,6 @@ self.onmessage = async (event: MessageEvent<RequestMessage>) => {
       }) as unknown as AsrPipeline;
     }
     const result = await transcriber(audio, {
-      chunk_length_s: 30,
-      stride_length_s: 2,
       return_timestamps: "word",
       ...(language && language !== "auto" ? { language } : {}),
       task: "transcribe",
