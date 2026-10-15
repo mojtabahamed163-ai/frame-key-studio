@@ -6,7 +6,8 @@
 
 - المستودع: https://github.com/mojtabahamed163-ai/frame-key-studio
 - الفرع الافتراضي: `main`.
-- فرع العمل لهذه الحزمة: `fix/robust-canvas-face-tracking`؛ لا تدمج مباشرة إلى `main` قبل إغلاق الاختبارات المعلّمة أدناه.
+- فرع العمل المنشور لهذه الحزمة: `fix/robust-canvas-face-tracking`.
+- طلب المراجعة: [PR #1 — مسودة، غير مدمجة](https://github.com/mojtabahamed163-ai/frame-key-studio/pull/1). لا تدمج مباشرة إلى `main` قبل إغلاق الاختبارات المعلّمة أدناه.
 - المستودع عام. لا تُدرج وسائط خام أو أسرارًا أو بيانات وصول في commit.
 - التطبيق React/Vite/TypeScript مع خادم Express/tRPC/Drizzle موروث من القالب.
 - مسارات الفيديو والصوت والتفريغ والتصدير محلية داخل متصفح المستخدم. لا تضف رفعًا سحابيًا للوسائط أو API مدفوعة أو نظام دفع/اشتراكات.
