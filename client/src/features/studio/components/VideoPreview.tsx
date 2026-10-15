@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
+import { objectPositionForPortraitCrop } from "../media/framing";
 import type { CaptionCue, ClipSuggestion, StudioSettings } from "../types";
 
 export function VideoPreview({
@@ -23,20 +24,20 @@ export function VideoPreview({
   onTimeUpdate: (time: number) => void;
 }) {
   const [logoUrl, setLogoUrl] = useState("");
-  const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoSize, setVideoSize] = useState({ src: "", width: 0, height: 0 });
   const localTime = clip ? Math.max(0, currentTime - clip.start) : 0;
   const center = useMemo(() => settings.smartFraming
     ? faceCenterAt(faceKeyframes, localTime, settings.manualCropX, settings.manualCropY)
     : { x: settings.manualCropX, y: settings.manualCropY }, [settings.smartFraming, settings.manualCropX, settings.manualCropY, faceKeyframes, localTime]);
+  const sourceWidth = videoSize.src === src ? videoSize.width : 0;
+  const sourceHeight = videoSize.src === src ? videoSize.height : 0;
+  const objectPosition = useMemo(
+    () => objectPositionForPortraitCrop(sourceWidth, sourceHeight, 9 / 16, center.x, center.y),
+    [sourceWidth, sourceHeight, center.x, center.y],
+  );
   const activeCue = cues.find((cue) => currentTime >= cue.start && currentTime <= cue.end);
   const activeWordId = activeCue?.words.find((word) => currentTime >= word.start && currentTime <= word.end)?.id;
   const titleText = clip?.selectedTitle?.trim() || clip?.titleOptions[0]?.trim() || "";
-
-  useEffect(() => {
-    const background = backgroundVideoRef.current;
-    if (!background || settings.framingMode !== "full") return;
-    if (Math.abs(background.currentTime - currentTime) > 0.08) background.currentTime = currentTime;
-  }, [backgroundVideoRef, currentTime, settings.framingMode]);
 
   useEffect(() => {
     if (!settings.logo) {
@@ -52,16 +53,20 @@ export function VideoPreview({
     <div className="studio-preview-wrap">
       <div className="studio-preview-topline"><span><span className="studio-live-dot" /> LOCAL PREVIEW</span><span>9:16 / PORTRAIT</span></div>
       <div className="studio-preview-frame">
-        {settings.framingMode === "full" && <video ref={backgroundVideoRef} className="studio-preview-background" src={src} muted playsInline preload="metadata" aria-hidden="true" />}
         <video
           ref={videoRef}
           src={src}
           controls
           playsInline
           preload="metadata"
+          className={settings.framingMode === "full" ? "studio-preview-video--full" : undefined}
           onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-          onLoadedMetadata={(event) => { if (clip) event.currentTarget.currentTime = clip.start; }}
-          style={settings.framingMode === "full" ? undefined : { objectPosition: `${center.x * 100}% ${center.y * 100}%` }}
+          onLoadedMetadata={(event) => {
+            const video = event.currentTarget;
+            setVideoSize({ src, width: video.videoWidth, height: video.videoHeight });
+            if (clip) video.currentTime = clip.start;
+          }}
+          style={settings.framingMode === "full" ? undefined : { objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%` }}
         />
         {logoUrl && <img className={`studio-preview-logo studio-preview-logo--${settings.logoPosition}`} src={logoUrl} alt="" aria-hidden="true" />}
         {settings.showTitleCard && clip && titleText && currentTime >= clip.start && currentTime < clip.start + 2.8 && <div className="studio-preview-title" style={{ backgroundColor: settings.primaryColor, fontFamily: settings.fontFamily }}><span style={{ backgroundColor: settings.accentColor }} /><strong>{titleText}</strong></div>}

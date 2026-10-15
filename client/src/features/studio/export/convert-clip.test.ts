@@ -1,10 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { cropForPortrait, portraitCropQuality, videoBitrateForHeight } from "./convert-clip";
+import { describe, expect, it, vi } from "vitest";
+import { cropForPortrait, portraitCropQuality, requestSaveTarget, videoBitrateForHeight } from "./convert-clip";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
     expect(videoBitrateForHeight(1280)).toBe(6_000_000);
     expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+  });
+});
+
+describe("save picker fallback", () => {
+  it("does not reopen a picker that timed out without a response", async () => {
+    const picker = vi.fn(() => new Promise<never>(() => undefined));
+    const fakeWindow = {
+      showSaveFilePicker: picker,
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    } as unknown as Window;
+    vi.stubGlobal("window", fakeWindow);
+    try {
+      await expect(requestSaveTarget("clip.webm", "webm-vp9", 5)).resolves.toBeNull();
+      await expect(requestSaveTarget("clip-again.webm", "webm-vp9", 5)).resolves.toBeNull();
+      expect(picker).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
