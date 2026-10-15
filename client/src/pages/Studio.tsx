@@ -8,7 +8,7 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
-import { buildCaptionCues, joinTranscriptWords, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { buildCaptionCues, buildClipSpeechRanges, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
@@ -354,7 +354,7 @@ export default function Studio() {
     try {
       const words = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
-      const suggestions = suggestClips(words);
+      const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
         words,
@@ -580,11 +580,10 @@ export default function Studio() {
   function exportCaptionFile(kind: "srt" | "vtt") {
     if (!activeClip) return;
     const duration = activeClip.end - activeClip.start;
-    const cues = chooseSubtitleForExport(activeClip).filter((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end).map((cue) => {
-      const start = Math.max(0, Math.min(duration - 0.05, cue.start - activeClip.start));
-      const end = Math.max(start + 0.05, Math.min(duration, cue.end - activeClip.start));
-      return { ...cue, start, end };
-    });
+    const ranges = project && settings.silenceRemoval && project.words.length
+      ? buildClipSpeechRanges(project.words, activeClip.start, activeClip.end, settings.silenceThresholdSeconds)
+      : [{ start: 0, end: duration }];
+    const cues = mapCaptionCuesToOutput(chooseSubtitleForExport(activeClip), activeClip.start, activeClip.end, ranges);
     const text = kind === "srt" ? exportSrt(cues) : exportVtt(cues);
     downloadText(text, `${safeFileStem(clipTitle(activeClip, 0))}.${kind}`, kind === "srt" ? "application/x-subrip;charset=utf-8" : "text/vtt;charset=utf-8");
   }
@@ -593,6 +592,7 @@ export default function Studio() {
     if (!project || !sourceFile || !activeClip || !outputFormat) return;
     setError("");
     setIsExporting(true);
+    setExportProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
     setBatchZip(null);
     setRenderStatuses((current) => ({ ...current, [activeClip.id]: "rendering" }));
     setClipProgress((current) => ({ ...current, [activeClip.id]: 0 }));
@@ -640,6 +640,7 @@ export default function Studio() {
     if (estimatedZipBytes > ZIP_LIMIT) { setError("This ZIP would exceed the safe in-browser memory budget. Choose 720p or export clips one at a time with direct file saving."); return; }
     setError("");
     setIsExporting(true);
+    setExportProgress({ progress: 0, phase: `Clip 1 of ${clips.length}: preparing`, detail: "Preparing local video processing" });
     setRenderStatuses(Object.fromEntries(clips.map((clip) => [clip.id, "queued" as const])));
     setClipProgress(Object.fromEntries(clips.map((clip) => [clip.id, 0])));
     setRenderErrors({});
@@ -870,6 +871,7 @@ export default function Studio() {
                 {settings.smartFraming && faceKeyframes.some((frame) => frame.framingSafe === false) && <p className="studio-inline-warning"><AlertTriangle size={14} />The conservative face/headroom margin estimate does not fit in the 9:16 crop at every sample; this is not body detection. Review the preview and adjust manual framing if needed.</p>}
                 <label className="studio-field">Portrait framing mode<select value={settings.framingMode} onChange={(event) => changeSettings({ framingMode: event.target.value as StudioSettings["framingMode"] })}><option value="fill">Fill portrait frame · crop sides</option><option value="full">Show full video · studio background</option></select><small>{settings.framingMode === "full" ? "Keeps the complete landscape frame visible without stretching on a dark 9:16 canvas; the preview uses the same background as export." : "Fills 9:16 by cropping the sides. Use face tracking or the manual slider to keep the subject visible."}</small></label>
                 <label className="studio-field studio-range-field">Manual horizontal framing<input type="range" min="0" max="1" step="0.01" value={settings.manualCropX} onChange={(event) => changeSettings({ manualCropX: Number(event.target.value) })} /><small>Use this if automatic face framing is unavailable or off-center.</small></label>
+                {settings.framingMode === "fill" && project.width / project.height < 9 / 16 && <label className="studio-field studio-range-field">Manual vertical framing<input type="range" min="0" max="1" step="0.01" value={settings.manualCropY} onChange={(event) => changeSettings({ manualCropY: Number(event.target.value) })} /><small>Shift the portrait crop up or down for this extra-tall source.</small></label>}
                 <label className="studio-field">Export resolution<select value={settings.outputHeight} onChange={(event) => changeSettings({ outputHeight: Number(event.target.value) as StudioSettings["outputHeight"] })}><option value={1920}>1080 × 1920 · higher quality</option><option value={1280}>720 × 1280 · lighter files</option></select></label>
                 {portraitQuality?.isUpscaled && <p className="studio-inline-warning"><AlertTriangle size={14} />This portrait crop uses about {portraitQuality.cropWidth}×{portraitQuality.cropHeight} source pixels and will be enlarged to {portraitQuality.outputWidth}×{portraitQuality.outputHeight}. Higher output dimensions cannot restore detail missing from the original crop.</p>}
                 <div className="studio-codec-note"><span className={outputFormat ? "codec-ready" : "codec-warn"} />{outputFormat ? `${outputFormat === "mp4" ? "MP4 / H.264 + AAC" : outputFormat === "webm-vp8" ? "WebM / VP8 + Opus" : "WebM / VP9 + Opus"} detected on this device` : "This browser does not report a compatible local video and audio encoder."}</div>
@@ -886,12 +888,13 @@ export default function Studio() {
                 {!project.clips.length ? <div className="studio-empty-inline"><Scissors size={17} /><span>There are no clips yet.</span><button type="button" className="studio-text-button" onClick={addManualClip}><Plus size={14} />Set a manual cut</button></div> : project.clips.map((clip, index) => {
                   const status = renderStatuses[clip.id];
                   const hasOutput = outputs.some((item) => item.clipId === clip.id);
+                  const preparing = status === "rendering" && Boolean(exportProgress?.phase.toLowerCase().includes("preparing"));
                   return <div className="export-queue-row" key={clip.id}>
                     <input type="checkbox" aria-label={`Include ${clipTitle(clip, index)} in batch`} checked={selectedForBatch.includes(clip.id)} disabled={isExporting} onChange={(event) => setSelectedForBatch((current) => event.target.checked ? [...new Set([...current, clip.id])] : current.filter((id) => id !== clip.id))} />
                     <span className="export-queue-row__number">{String(index + 1).padStart(2, "0")}</span><span className="export-queue-row__text"><strong>{clipTitle(clip, index)}</strong><small>{formatTime(clip.start)} — {formatTime(clip.end)} · {Math.round(clip.end - clip.start)} sec</small></span>
                     <div className="export-queue-row__status-stack">
-                      <span className={`export-queue-row__status is-${status ?? (hasOutput ? "ready" : "idle")}`}>{status === "rendering" ? `${Math.round(Math.max(0, Math.min(1, clipProgress[clip.id] ?? 0)) * 100)}%` : renderStatusLabel(status, hasOutput)}</span>
-                      {status === "rendering" && <progress className="export-queue-row__progress" max="100" value={Math.round(Math.max(0, Math.min(1, clipProgress[clip.id] ?? 0)) * 100)} aria-label={`Rendering ${clipTitle(clip, index)}`} />}
+                      <span className={`export-queue-row__status is-${status ?? (hasOutput ? "ready" : "idle")}`}>{status === "rendering" ? preparing ? "Preparing…" : `${Math.round(Math.max(0, Math.min(1, clipProgress[clip.id] ?? 0)) * 100)}%` : renderStatusLabel(status, hasOutput)}</span>
+                      {status === "rendering" && <progress className="export-queue-row__progress" max="100" {...(preparing ? {} : { value: Math.round(Math.max(0, Math.min(1, clipProgress[clip.id] ?? 0)) * 100) })} aria-label={`${preparing ? "Preparing" : "Rendering"} ${clipTitle(clip, index)}`} />}
                       {renderErrors[clip.id] && <small className="export-queue-row__error">{renderErrors[clip.id]}</small>}
                     </div>
                     <button type="button" className="studio-text-button" onClick={(event) => { event.preventDefault(); chooseClip(clip, "edit"); }} disabled={isExporting}><span className="sr-only">Edit</span><ArrowRight size={15} /></button>
@@ -902,7 +905,7 @@ export default function Studio() {
                 {project.clips.length > 0 && <div className="studio-export-buttons"><button type="button" className="studio-button studio-button--secondary" onClick={() => void exportOne()} disabled={isExporting || !activeClip || !outputFormat}><Download size={16} />Export selected clip</button><button type="button" className="studio-button studio-button--dark" onClick={() => void exportBatch()} disabled={isExporting || !outputFormat || !selectedForBatch.length || estimatedZipBytes > ZIP_LIMIT}><Package size={16} />{isExporting ? "Rendering batch…" : "Render selected + ZIP"}</button></div>}
                 {estimatedZipBytes > ZIP_LIMIT && <p className="studio-inline-warning"><AlertTriangle size={14} />Estimated batch exceeds the 64 MB ZIP memory budget. Use 720p or export clips individually to a file.</p>}
                 {!outputFormat && <p className="studio-inline-warning"><AlertTriangle size={14} />No supported WebCodecs encoder pair is available. Try an up-to-date desktop Chromium browser.</p>}
-                {isExporting && exportProgress && <div className="studio-progress-block"><ProgressCard label={exportProgress.phase} progress={exportProgress.progress} /><p>{exportProgress.detail}</p><button type="button" className="studio-text-button" onClick={() => exportController.current?.abort()}><X size={14} />Cancel processing</button></div>}
+                {isExporting && exportProgress && <div className="studio-progress-block"><ProgressCard label={exportProgress.phase} progress={exportProgress.progress} indeterminate={exportProgress.phase.toLowerCase().includes("preparing")} /><p>{exportProgress.detail}</p><button type="button" className="studio-text-button" onClick={() => exportController.current?.abort()}><X size={14} />Cancel processing</button></div>}
               </section>
               {(outputs.length > 0 || batchZip) && <section className="studio-panel studio-results-panel"><div className="studio-panel-heading"><span className="studio-panel-heading__index">✓</span><div><p>READY ON THIS DEVICE</p><h3>Your finished files.</h3></div></div>
                 {outputs.map((item) => <div className="studio-output-row" key={`${item.clipId}-${item.result.filename}`}><span><CheckCircle2 size={18} /></span><div><strong>{item.clipLabel}</strong><small>{formatBytes(item.result.byteLength)} · {item.result.streamed ? "saved to chosen file" : item.result.filename}</small></div>{item.result.blob && <button type="button" className="studio-button studio-button--small" onClick={() => void downloadOutput(item)}><Download size={14} />Save file</button>}</div>)}
@@ -926,9 +929,9 @@ export default function Studio() {
   );
 }
 
-function ProgressCard({ label, progress }: { label: string; progress: number }) {
+function ProgressCard({ label, progress, indeterminate = false }: { label: string; progress: number; indeterminate?: boolean }) {
   const percent = Math.round(Math.max(0, Math.min(1, progress)) * 100);
-  return <div className="studio-progress-card"><div><LoaderCircle size={15} className="studio-spinner" /><span>{label}</span><strong>{percent}%</strong></div><progress max="100" value={percent}>{percent}%</progress></div>;
+  return <div className="studio-progress-card"><div><LoaderCircle size={15} className="studio-spinner" /><span>{label}</span>{!indeterminate && <strong>{percent}%</strong>}</div><progress max="100" {...(indeterminate ? {} : { value: percent })} aria-label={`${label} progress`}>{indeterminate ? `${label} in progress` : `${percent}%`}</progress></div>;
 }
 
 function PlayIcon() { return <span aria-hidden="true">▶</span>; }

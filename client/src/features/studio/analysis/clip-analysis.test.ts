@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, mapSourceTimeToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import { buildCaptionCues, buildClipSpeechRanges, mapCaptionCuesToOutput, mapSourceTimeToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
 import type { TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
@@ -54,6 +54,50 @@ describe("local transcript analysis", () => {
     const words = wordsFrom(["why", "doing", "it", "was", "to", "move", "through", "the", "home.", "The", "complete", "point", "helps", "new", "buyers", "compare", "costs."]);
     expect(suggestClips(words).every((clip) => !clip.transcript.startsWith("why doing"))).toBe(true);
   });
+  it("does not claim a later topic word is a hook at the opening", () => {
+    const opening = wordsFrom("People often make decisions slowly when they are unsure about the available choices and the details involved.".split(" "));
+    const later = wordsFrom("Market prices and property values can change the final cost for buyers.".split(" "), 20);
+    const candidate = suggestClips([...opening, ...later], 10).find((clip) => clip.start === opening[0].start);
+    expect(candidate).toBeDefined();
+    expect(candidate?.reasons).not.toContain("Opens with a specific topic or useful claim");
+  });
+  it("marks short fallback suggestions for review rather than calling them reliable", () => {
+    const words = wordsFrom("Why did 12 buyers change their decision after the home inspection when the roof needed repair?".split(" "));
+    const candidate = suggestClips(words, 3).find((clip) => clip.start === words[0].start);
+    expect(candidate?.quality).toBe("review");
+    expect(candidate?.qualityWarning).toContain("shorter than the preferred 15-second range");
+  });
+  it("flags suggestions that end near the source tail for possible untranscribed speech", () => {
+    const words = wordsFrom(Array.from({ length: 36 }, (_, index) => index === 0 ? "An" : index === 35 ? "point." : `detail${index}`), 10.4);
+    const candidate = suggestClips(words, 3, 30.75).find((clip) => clip.start === words[0].start);
+    expect(candidate?.quality).toBe("review");
+    expect(candidate?.qualityWarning).toContain("speech omitted by transcription");
+  });
+  it("rejects a one-sentence speaker introduction as an automatic clip", () => {
+    const words = wordsFrom("And I'm here on behalf of the Hubble Space Telescope outreach team at NASA's Goddard Space Flight Center.".split(" "));
+    expect(suggestClips(words, 3)).toEqual([]);
+  });
+  it("builds distinct title options from transcript sentences and deprioritizes an introduction", () => {
+    const text = "I'm here to introduce this topic. Buyers should ask about the roof age before they make an offer. Compare repair estimates with the local budget and inspect recent permits. This can change the final cost for buyers in that neighbourhood.";
+    const candidate = suggestClips(wordsFrom(text.split(" ")), 3)[0];
+    expect(candidate).toBeDefined();
+    expect(candidate?.titleOptions[0]).toContain("Buyers should ask about the roof age");
+    expect(candidate?.titleOptions[1]).toContain("Compare repair estimates with the local budget");
+    expect(candidate?.titleOptions[2]).toContain("This can change the final cost for buyers");
+  });
+  it("accepts a valid clip longer than 45 seconds and never returns a clip over 60 seconds", () => {
+    const words = Array.from({ length: 100 }, (_, index) => ({
+      id: String(index), text: index === 0 ? "Buyers" : `detail${index}${index === 99 ? "." : ""}`,
+      start: index * 0.55, end: index * 0.55 + 0.38,
+    }));
+    const suggestions = suggestClips(words, 10);
+    expect(suggestions.some((clip) => clip.end - clip.start > 45 && clip.end - clip.start <= 60)).toBe(true);
+    expect(suggestions.every((clip) => clip.end - clip.start <= 60)).toBe(true);
+  });
+  it("returns no suggestions when the requested clip count is zero", () => {
+    const words = wordsFrom("The housing market changed this year and buyers should compare the actual cost before choosing a property because the details can change the full monthly payment.".split(" "));
+    expect(suggestClips(words, 0)).toEqual([]);
+  });
 
   it("ties up to three opening choices to safe sentence start times", () => {
     const texts = [
@@ -82,6 +126,16 @@ describe("local transcript analysis", () => {
     expect(mapSourceTimeToOutput(3, ranges)).toBe(1);
     expect(mapSourceTimeToOutput(6, ranges)).toBeNull();
     expect(mapSourceTimeToOutput(9, ranges)).toBe(4);
+  });
+  it("compresses external subtitle timestamps with the same speech ranges as the rendered video", () => {
+    const cue = { id: "cue", start: 10.5, end: 15.5, text: "A line across a removed pause.", words: [] };
+    const mapped = mapCaptionCuesToOutput([cue], 10, 16, [{ start: 0, end: 1.5 }, { start: 4, end: 6 }]);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({ start: 0.5, end: 3, text: cue.text });
+  });
+  it("preserves a manual clip when transcript speech ranges contain no words", () => {
+    const words = wordsFrom(["speech."], 30);
+    expect(buildClipSpeechRanges(words, 0, 12, 1.2)).toEqual([{ start: 0, end: 12 }]);
   });
 
   it("preserves small natural boundaries and removes only long pauses", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cropForPortrait, portraitCropQuality, requestSaveTarget, videoBitrateForHeight } from "./convert-clip";
+import { cropForPortrait, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
@@ -58,5 +58,13 @@ describe("portrait crop geometry", () => {
 
   it("handles portrait input without cropping and clamps out-of-range centers", () => {
     expect(cropForPortrait(1080, 1920, 9 / 16, -4, 4)).toEqual({ left: 0, top: 0, width: 1080, height: 1920 });
+  });
+});
+
+describe("title-card geometry", () => {
+  it("keeps a three-line title inside a compact upper band", () => {
+    const card = titleCardGeometry(720, 1280, 3, 36, 25);
+    expect(card).toEqual({ x: 25, y: 58, width: 670, height: 160 });
+    expect(card.y + card.height).toBeLessThan(1280 * 0.2);
   });
 });

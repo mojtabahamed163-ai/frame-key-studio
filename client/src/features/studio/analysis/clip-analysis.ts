@@ -9,7 +9,8 @@ interface Sentence {
   startsAtBoundary: boolean;
 }
 
-const HOOK_TERMS = /\b(why|how|what|when|mistake|truth|secret|never|always|first|best|before|after|because|important|remember|number|cost|price|market|buyer|seller|home|property|real estate)\b/i;
+const HOOK_TERMS = /^\s*(?:(?:the|a|an)\s+)?(why|how|what|when|mistake|truth|secret|never|always|first|best|before|after|because|important|remember|number|cost|price|market|buyer|seller|home|property|real estate)\b/i;
+const INTRO_OPENERS = /^\s*(?:and\s+)?(?:i['’]m|i am)\s+(?:here\b|thrilled\b|excited\b|speaking\b)|^\s*(?:today\s*,?\s*(?:we['’]re|we are)\s+(?:(?:absolutely|really)\s+)?(?:thrilled|excited|here)\b|welcome back\b|thank you for (?:joining|watching)\b|thanks for (?:joining|watching)\b|my name is\b|in today['’]s video\b)/i;
 const FILLERS = new Set(["um", "uh", "erm", "you", "know", "like", "so"]);
 const TOPIC_TAGS: Array<[RegExp, string]> = [
   [/\b(real estate|realtor|realtors|agent|agents|broker|brokers)\b/i, "realestate"],
@@ -83,11 +84,12 @@ export function sentenceGroups(words: TranscriptWord[]): Sentence[] {
   return sentences;
 }
 
-function scoreWindow(sentences: Sentence[], start: number, end: number, text: string): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
+function scoreWindow(sentences: Sentence[], start: number, end: number, text: string, sourceDuration?: number): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
   const duration = end - start;
   const clipWords = sentences.flatMap((sentence) => sentence.words);
   const words = text.split(/\s+/).filter(Boolean);
   const reasons: string[] = [];
+  const warningParts: string[] = [];
   let score = 0;
   const durationScore = 3.5 - Math.min(3.5, Math.abs(duration - 28) / 16);
   score += durationScore;
@@ -95,10 +97,16 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
   else if (duration >= 8 && duration < 15) {
     score -= 1.5;
     reasons.push("A shorter fallback segment; review the context before publishing");
+    warningParts.push("the fallback segment is shorter than the preferred 15-second range");
   }
-  if (/[?!]/.test(text)) { score += 1.5; reasons.push("Contains a question or emphatic line"); }
+  const opening = sentences[0]?.text ?? text;
+  if (/[?!]/.test(opening)) { score += 1.5; reasons.push("Opens with a question or emphatic line"); }
   if (/\b\d+(?:\.\d+)?%?\b/.test(text)) { score += 1.25; reasons.push("Includes a concrete number"); }
-  if (HOOK_TERMS.test(text)) { score += 1.1; reasons.push("Opens with a specific topic or useful claim"); }
+  if (HOOK_TERMS.test(opening)) { score += 1.1; reasons.push("Opens with a specific topic or useful claim"); }
+  if (INTRO_OPENERS.test(opening)) {
+    score -= 1.1;
+    warningParts.push("the opening sounds like a speaker or programme introduction rather than the main point");
+  }
   if (words.length >= 18 && words.length <= 105) { score += 0.65; reasons.push("Has enough context to stand on its own"); }
   const pauses = sentences.slice(1).map((sentence, index) => sentence.start - sentences[index].end).filter((gap) => gap >= 0.18 && gap <= 1.2);
   if (pauses.length) { score += 0.45; reasons.push("Has a natural speech pause"); }
@@ -112,7 +120,6 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     bigrams.set(bigram, (bigrams.get(bigram) ?? 0) + 1);
   }
   const repeatedBigrams = [...bigrams.values()].filter((count) => count >= 2).length;
-  const warningParts: string[] = [];
   const firstToken = clipWords[0]?.text.trim() ?? "";
   const firstSentence = sentences[0];
   const startsLowercase = /^[a-z]/.test(firstToken);
@@ -143,19 +150,27 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     score -= 1.5;
     warningParts.push("the transcript contains many filler words");
   }
+  if (sourceDuration != null && Number.isFinite(sourceDuration) && sourceDuration > 0 && end >= sourceDuration - 1.25) {
+    warningParts.push("the clip ends close to the source tail; check for speech omitted by transcription");
+  }
   const qualityWarning = warningParts.length ? `Review required: ${warningParts.join(" and ")}.` : undefined;
   return { score, reasons, quality: qualityWarning ? "review" : "reliable", qualityWarning };
 }
 
 function makePostCopy(text: string, start: number): Pick<ClipSuggestion, "titleOptions" | "description" | "hashtags" | "callsToAction"> {
-    const firstSentence = sentenceGroups(text.split(/\s+/).map((token, i) => ({ id: `${i}`, text: token, start: i, end: i + 0.5 })))[0]?.text ?? text;
-  const quote = firstSentence.replace(/^[-–—\s]+|[\s]+$/g, "");
-  const concise = quote.length > 76 ? `${quote.slice(0, 72).replace(/\s+\S*$/, "")}…` : quote;
-  const anchor = concise || `A moment from ${formatClock(start)}`;
+  const sentenceTexts = sentenceGroups(text.split(/\s+/).map((token, i) => ({ id: `${i}`, text: token, start: i, end: i + 0.5 })))
+    .map((sentence) => sentence.text.replace(/^[-–—\s]+|[\s]+$/g, ""))
+    .filter(Boolean);
+  const preferredTitles = sentenceTexts.filter((sentence) => !INTRO_OPENERS.test(sentence));
+  const titleSeeds = [...preferredTitles, ...sentenceTexts.filter((sentence) => INTRO_OPENERS.test(sentence))]
+    .filter((sentence, index, all) => all.indexOf(sentence) === index)
+    .slice(0, 3)
+    .map((sentence) => sentence.length > 76 ? `${sentence.slice(0, 72).replace(/\s+\S*$/, "")}…` : sentence);
+  const anchor = titleSeeds[0] || `A moment from ${formatClock(start)}`;
   const titleOptions = [
-    `“${anchor}”`,
-    `The point: ${anchor}`,
-    `Worth a closer look: ${anchor}`,
+    `“${titleSeeds[0] ?? anchor}”`,
+    `The point: ${titleSeeds[1] ?? anchor}`,
+    `Worth a closer look: ${titleSeeds[2] ?? anchor}`,
   ];
   const hashtags = TOPIC_TAGS.filter(([pattern]) => pattern.test(text)).map(([, tag]) => `#${tag}`).slice(0, 5);
   const callsToAction = ["What would you add to this conversation?", "Save this for later.", "What is your experience with this?" ];
@@ -173,7 +188,9 @@ function formatClock(seconds: number): string {
   return `${mins}:${secs}`;
 }
 
-export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggestion[] {
+export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDuration?: number): ClipSuggestion[] {
+  const limit = Number.isFinite(maxClips) ? Math.max(0, Math.floor(maxClips)) : 0;
+  if (limit === 0) return [];
   const sentences = sentenceGroups(words);
   if (!sentences.length) return [];
   const candidates: ClipSuggestion[] = [];
@@ -182,14 +199,14 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
     const group: Sentence[] = [];
     for (let endIndex = startIndex; endIndex < sentences.length; endIndex += 1) {
       const next = sentences[endIndex];
-      if (group.length && next.end - group[0].start > 45) break;
+      if (group.length && next.end - group[0].start > 60) break;
       group.push(next);
       if (group.some((sentence) => !sentence.complete || !sentence.startsAtBoundary)) continue;
       const duration = next.end - group[0].start;
       if (duration < 8 || duration > 60) continue;
       const text = group.map((sentence) => sentence.text).join(" ");
-      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text);
-      if (qualityWarning && score < 3.5) continue;
+      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text, sourceDuration);
+      if (qualityWarning && score < 1) continue;
       const wordsInClip = group.flatMap((sentence) => sentence.words);
       const copy = makePostCopy(text, group[0].start);
       const hookCandidates = group.slice(0, 3).filter((sentence) => next.end - sentence.start >= 8);
@@ -220,7 +237,7 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
       return overlap > Math.min(current.end - current.start, candidate.end - candidate.start) * 0.25;
     });
     if (!overlaps) selected.push(candidate);
-    if (selected.length >= maxClips) break;
+    if (selected.length >= limit) break;
   }
   return selected.sort((a, b) => a.start - b.start);
 }
@@ -269,6 +286,15 @@ export function speechKeepRanges(words: TranscriptWord[], start: number, end: nu
   return ranges.filter((range) => range.end - range.start >= 0.04);
 }
 
+export function buildClipSpeechRanges(words: TranscriptWord[], start: number, end: number, thresholdSeconds: number): SpeechRange[] {
+  if (end <= start) return [];
+  const duration = end - start;
+  const ranges = speechKeepRanges(words, start, end, thresholdSeconds)
+    .map((range) => ({ start: Math.max(0, Math.min(duration, range.start - start)), end: Math.max(0, Math.min(duration, range.end - start)) }))
+    .filter((range) => range.end > range.start);
+  return ranges.length ? ranges : [{ start: 0, end: duration }];
+}
+
 export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): number | null {
   let outputCursor = 0;
   for (const range of ranges) {
@@ -277,6 +303,36 @@ export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): numb
     outputCursor += range.end - range.start;
   }
   return null;
+}
+
+function mapCaptionBoundaryToOutput(time: number, ranges: SpeechRange[]): number {
+  let outputCursor = 0;
+  for (const range of ranges) {
+    if (time <= range.start) return outputCursor;
+    if (time <= range.end) return outputCursor + (time - range.start);
+    outputCursor += range.end - range.start;
+  }
+  return outputCursor;
+}
+
+export function mapCaptionCuesToOutput(cues: CaptionCue[], clipStart: number, clipEnd: number, ranges: SpeechRange[]): CaptionCue[] {
+  if (clipEnd <= clipStart || !ranges.length) return [];
+  const orderedRanges = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start);
+  if (!orderedRanges.length) return [];
+  return cues.flatMap((cue) => {
+    const sourceStart = Math.max(clipStart, cue.start);
+    const sourceEnd = Math.min(clipEnd, cue.end);
+    if (sourceEnd <= sourceStart) return [];
+    const start = mapCaptionBoundaryToOutput(Math.max(0, sourceStart - clipStart), orderedRanges);
+    const end = mapCaptionBoundaryToOutput(Math.max(0, sourceEnd - clipStart), orderedRanges);
+    if (end <= start) return [];
+    const words = cue.words.flatMap((word) => {
+      const wordStart = mapCaptionBoundaryToOutput(Math.max(0, word.start - clipStart), orderedRanges);
+      const wordEnd = mapCaptionBoundaryToOutput(Math.max(0, word.end - clipStart), orderedRanges);
+      return wordEnd > wordStart ? [{ ...word, start: wordStart, end: wordEnd }] : [];
+    });
+    return [{ ...cue, start, end, words }];
+  });
 }
 
 export function formatSrtTime(seconds: number): string {

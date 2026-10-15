@@ -13,7 +13,7 @@ import {
   VideoSample,
   WebMOutputFormat,
 } from "mediabunny";
-import { mapSourceTimeToOutput, speechKeepRanges } from "../analysis/clip-analysis";
+import { buildClipSpeechRanges, mapSourceTimeToOutput } from "../analysis/clip-analysis";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { cropForPortrait } from "../media/framing";
 import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetadata } from "../types";
@@ -162,6 +162,16 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   ctx.restore();
 }
 
+export function titleCardGeometry(width: number, height: number, visibleLineCount: number, fontSize: number, padding: number): { x: number; y: number; width: number; height: number } {
+  const lineCount = Math.max(0, Math.min(3, Math.floor(visibleLineCount)));
+  return {
+    x: padding,
+    y: Math.round(height * 0.045),
+    width: Math.max(0, width - padding * 2),
+    height: lineCount * fontSize * 1.25 + padding,
+  };
+}
+
 function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, absoluteTime: number, settings: StudioProject["settings"]): void {
   const title = (clip.selectedTitle || clip.titleOptions[0] || "").trim();
   if (!settings.showTitleCard || !title || absoluteTime < clip.start || absoluteTime >= clip.start + 2.8) return;
@@ -170,11 +180,11 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   ctx.save();
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
-  const fontSize = Math.round(height * 0.032);
+  const fontSize = Math.max(30, Math.round(height * 0.028));
   ctx.font = `700 ${fontSize}px ${settings.fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
-  const padding = Math.round(width * 0.055);
+  const padding = Math.round(width * 0.035);
   const maxLineWidth = width - padding * 2 - 36;
   const lines: string[] = [];
   let line = "";
@@ -186,12 +196,10 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   if (line) lines.push(line);
   const visible = lines.slice(0, 3);
   const lineHeight = fontSize * 1.25;
-  const cardHeight = visible.length * lineHeight + padding;
-  const x = padding;
-  const y = height * 0.13;
+  const { x, y, width: cardWidth, height: cardHeight } = titleCardGeometry(width, height, visible.length, fontSize, padding);
   ctx.globalAlpha = 0.94;
   ctx.fillStyle = primaryColor;
-  roundRect(ctx, x, y, width - padding * 2, cardHeight, Math.round(fontSize * 0.32));
+  roundRect(ctx, x, y, cardWidth, cardHeight, Math.round(fontSize * 0.32));
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.fillStyle = accentColor;
@@ -237,9 +245,7 @@ async function measurePeak(file: File, start: number, end: number): Promise<numb
 function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
   const duration = Math.max(0.05, clip.end - clip.start);
   if (!project.settings.silenceRemoval || !project.words.length) return [{ start: 0, end: duration }];
-  return speechKeepRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds)
-    .map((range) => ({ start: clamp(range.start - clip.start, 0, duration), end: clamp(range.end - clip.start, 0, duration) }))
-    .filter((range) => range.end > range.start);
+  return buildClipSpeechRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds);
 }
 
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
