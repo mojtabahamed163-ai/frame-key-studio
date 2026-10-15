@@ -13,9 +13,12 @@ import {
   VideoSample,
   WebMOutputFormat,
 } from "mediabunny";
-import { mapSourceTimeToOutput, speechKeepRanges } from "../analysis/clip-analysis";
+import { buildClipSpeechRanges, mapSourceTimeToOutput } from "../analysis/clip-analysis";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
+import { cropForPortrait } from "../media/framing";
 import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetadata } from "../types";
+
+export { cropForPortrait, portraitCropQuality } from "../media/framing";
 
 interface WriteChunk { position: number; data: Uint8Array }
 interface FileWritable {
@@ -54,43 +57,53 @@ export async function supportedOutputFormat(height: number): Promise<OutputForma
   return null;
 }
 
-export async function requestSaveTarget(name: string, format: OutputFormat): Promise<FileWritable | null> {
+let savePickerUnavailable = false;
+
+export async function requestSaveTarget(name: string, format: OutputFormat, timeoutMs = 2500): Promise<FileWritable | null> {
   const picker = (window as SavePickerWindow).showSaveFilePicker;
-  if (!picker) return null;
-  const pickerRequest = picker({
-    suggestedName: name,
-    types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
-  }).then((handle) => handle.createWritable());
-  // Some embedded browsers expose the API but do not surface its native dialog.
-  // Do not block encoding forever in that case; the caller will use BufferTarget.
-  const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));
-  return Promise.race([pickerRequest, timeout]);
+  if (!picker || savePickerUnavailable) return null;
+
+  let requestSettled = false;
+  let timedOut = false;
+  const pickerRequest = Promise.resolve()
+    .then(() => picker({
+      suggestedName: name,
+      types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
+    }))
+    .then(async (handle) => {
+      if (timedOut) return null;
+      const writable = await handle.createWritable();
+      if (timedOut) {
+        await writable.abort().catch(() => undefined);
+        return null;
+      }
+      requestSettled = true;
+      return writable;
+    })
+    .catch((cause: unknown) => {
+      requestSettled = true;
+      // User cancellation is a normal fallback; other errors (including an
+      // invisible/already-active picker) make another prompt unsafe this tab.
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) savePickerUnavailable = true;
+      return null;
+    });
+
+  let timeoutId = 0;
+  const timeout = new Promise<null>((resolve) => {
+    timeoutId = window.setTimeout(() => {
+      if (!requestSettled) {
+        timedOut = true;
+        savePickerUnavailable = true;
+      }
+      resolve(null);
+    }, Math.max(0, timeoutMs));
+  });
+  const result = await Promise.race([pickerRequest, timeout]);
+  window.clearTimeout(timeoutId);
+  return result;
 }
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
-export function cropForPortrait(width: number, height: number, targetAspect: number, centerX: number, centerY: number) {
-  const sourceWidth = Math.max(1, Math.floor(Number.isFinite(width) ? width : 1));
-  const sourceHeight = Math.max(1, Math.floor(Number.isFinite(height) ? height : 1));
-  const aspect = Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : 9 / 16;
-  let cropWidth = sourceWidth;
-  let cropHeight = sourceHeight;
-  if (sourceWidth / sourceHeight > aspect) cropWidth = Math.round(sourceHeight * aspect);
-  else cropHeight = Math.round(sourceWidth / aspect);
-  cropWidth = clamp(cropWidth, 1, sourceWidth);
-  cropHeight = clamp(cropHeight, 1, sourceHeight);
-  const safeCenterX = clamp(Number.isFinite(centerX) ? centerX : 0.5, 0, 1);
-  const safeCenterY = clamp(Number.isFinite(centerY) ? centerY : 0.5, 0, 1);
-  const left = clamp(Math.round(safeCenterX * sourceWidth - cropWidth / 2), 0, sourceWidth - cropWidth);
-  const top = clamp(Math.round(safeCenterY * sourceHeight - cropHeight / 2), 0, sourceHeight - cropHeight);
-  return { left, top, width: cropWidth, height: cropHeight };
-}
-
-export function portraitCropQuality(sourceWidth: number, sourceHeight: number, outputHeight: number) {
-  const outputWidth = Math.round(outputHeight * 9 / 16);
-  const crop = cropForPortrait(sourceWidth, sourceHeight, 9 / 16, 0.5, 0.5);
-  const scale = Math.max(outputWidth / crop.width, outputHeight / crop.height);
-  return { cropWidth: crop.width, cropHeight: crop.height, outputWidth, outputHeight, scale, isUpscaled: scale > 1.01 };
-}
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
   ctx.beginPath();
@@ -149,6 +162,16 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   ctx.restore();
 }
 
+export function titleCardGeometry(width: number, height: number, visibleLineCount: number, fontSize: number, padding: number): { x: number; y: number; width: number; height: number } {
+  const lineCount = Math.max(0, Math.min(3, Math.floor(visibleLineCount)));
+  return {
+    x: padding,
+    y: Math.round(height * 0.045),
+    width: Math.max(0, width - padding * 2),
+    height: lineCount * fontSize * 1.25 + padding,
+  };
+}
+
 function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, absoluteTime: number, settings: StudioProject["settings"]): void {
   const title = (clip.selectedTitle || clip.titleOptions[0] || "").trim();
   if (!settings.showTitleCard || !title || absoluteTime < clip.start || absoluteTime >= clip.start + 2.8) return;
@@ -157,11 +180,11 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   ctx.save();
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
-  const fontSize = Math.round(height * 0.032);
+  const fontSize = Math.max(30, Math.round(height * 0.028));
   ctx.font = `700 ${fontSize}px ${settings.fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
-  const padding = Math.round(width * 0.055);
+  const padding = Math.round(width * 0.035);
   const maxLineWidth = width - padding * 2 - 36;
   const lines: string[] = [];
   let line = "";
@@ -173,12 +196,10 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   if (line) lines.push(line);
   const visible = lines.slice(0, 3);
   const lineHeight = fontSize * 1.25;
-  const cardHeight = visible.length * lineHeight + padding;
-  const x = padding;
-  const y = height * 0.13;
+  const { x, y, width: cardWidth, height: cardHeight } = titleCardGeometry(width, height, visible.length, fontSize, padding);
   ctx.globalAlpha = 0.94;
   ctx.fillStyle = primaryColor;
-  roundRect(ctx, x, y, width - padding * 2, cardHeight, Math.round(fontSize * 0.32));
+  roundRect(ctx, x, y, cardWidth, cardHeight, Math.round(fontSize * 0.32));
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.fillStyle = accentColor;
@@ -224,9 +245,7 @@ async function measurePeak(file: File, start: number, end: number): Promise<numb
 function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
   const duration = Math.max(0.05, clip.end - clip.start);
   if (!project.settings.silenceRemoval || !project.words.length) return [{ start: 0, end: duration }];
-  return speechKeepRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds)
-    .map((range) => ({ start: clamp(range.start - clip.start, 0, duration), end: clamp(range.end - clip.start, 0, duration) }))
-    .filter((range) => range.end > range.start);
+  return buildClipSpeechRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds);
 }
 
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
