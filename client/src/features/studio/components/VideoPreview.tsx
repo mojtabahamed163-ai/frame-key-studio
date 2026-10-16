@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
+import { objectPositionForPortraitCrop } from "../media/framing";
 import type { CaptionCue, ClipSuggestion, StudioSettings } from "../types";
 
 export function VideoPreview({
@@ -24,10 +25,17 @@ export function VideoPreview({
 }) {
   const [logoUrl, setLogoUrl] = useState("");
   const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoSize, setVideoSize] = useState({ src: "", width: 0, height: 0 });
   const localTime = clip ? Math.max(0, currentTime - clip.start) : 0;
   const center = useMemo(() => settings.smartFraming
     ? faceCenterAt(faceKeyframes, localTime, settings.manualCropX, settings.manualCropY)
     : { x: settings.manualCropX, y: settings.manualCropY }, [settings.smartFraming, settings.manualCropX, settings.manualCropY, faceKeyframes, localTime]);
+  const sourceWidth = videoSize.src === src ? videoSize.width : 0;
+  const sourceHeight = videoSize.src === src ? videoSize.height : 0;
+  const objectPosition = useMemo(
+    () => objectPositionForPortraitCrop(sourceWidth, sourceHeight, 9 / 16, center.x, center.y),
+    [sourceWidth, sourceHeight, center.x, center.y],
+  );
   const activeCue = cues.find((cue) => currentTime >= cue.start && currentTime <= cue.end);
   const activeWordId = activeCue?.words.find((word) => currentTime >= word.start && currentTime <= word.end)?.id;
   const titleText = clip?.selectedTitle?.trim() || clip?.titleOptions[0]?.trim() || "";
@@ -60,8 +68,12 @@ export function VideoPreview({
           playsInline
           preload="metadata"
           onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-          onLoadedMetadata={(event) => { if (clip) event.currentTarget.currentTime = clip.start; }}
-          style={settings.framingMode === "full" ? undefined : { objectPosition: `${center.x * 100}% ${center.y * 100}%` }}
+          onLoadedMetadata={(event) => {
+            const video = event.currentTarget;
+            setVideoSize({ src, width: video.videoWidth, height: video.videoHeight });
+            if (clip) video.currentTime = clip.start;
+          }}
+          style={settings.framingMode === "full" ? undefined : { objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%` }}
         />
         {logoUrl && <img className={`studio-preview-logo studio-preview-logo--${settings.logoPosition}`} src={logoUrl} alt="" aria-hidden="true" />}
         {settings.showTitleCard && clip && titleText && currentTime >= clip.start && currentTime < clip.start + 2.8 && <div className="studio-preview-title" style={{ backgroundColor: settings.primaryColor, fontFamily: settings.fontFamily }}><span style={{ backgroundColor: settings.accentColor }} /><strong>{titleText}</strong></div>}
