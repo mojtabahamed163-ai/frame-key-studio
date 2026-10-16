@@ -351,7 +351,7 @@ export default function Studio() {
     try {
       const words = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
-      const suggestions = suggestClips(words);
+      const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
         words,
