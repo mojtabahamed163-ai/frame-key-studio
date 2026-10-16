@@ -36,6 +36,11 @@ describe("local transcript analysis", () => {
     expect(suggestions.every((clip) => clip.start >= complete[0].start)).toBe(true);
   });
 
+  it("does not invent a completed passage from an unfinished transcript", () => {
+    const unfinished = wordsFrom("A useful explanation continues across several important details but never reaches its conclusion".split(" "));
+    expect(suggestClips(unfinished, 3, 30)).toEqual([]);
+  });
+
   it("rejects a repetitive transcript instead of presenting it as a usable clip", () => {
     const repeated = Array.from({ length: 34 }, (_, index) => ["not", "that", "is", "the", "same", "point"][index % 6]);
     repeated[repeated.length - 1] = "point.";
@@ -67,6 +72,70 @@ describe("local transcript analysis", () => {
     expect(candidate).toBeDefined();
     expect(candidate?.hookStartOptions).toHaveLength(3);
     expect(candidate?.hookStartOptions?.[0]).toBe(candidate?.start);
+  });
+
+  it("keeps every suggestion inside the source duration", () => {
+    const valid = wordsFrom("The complete explanation gives viewers useful context and a practical conclusion for making a better decision today.".split(" "), 0);
+    const beyondEnd = wordsFrom("Tomorrow's auditor carefully measures annual expenses because hidden utility charges alter a family budget before buyers compare several coastal properties downtown.".split(" "), 20);
+    const suggestions = suggestClips([...valid, ...beyondEnd], 10, 25);
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.every((clip) => clip.start >= 0 && clip.end <= 25)).toBe(true);
+  });
+
+  it("does not generate negative source timestamps from inaccurate transcript offsets", () => {
+    const words = wordsFrom("The complete explanation gives viewers useful context and a practical conclusion for making a better decision today.".split(" "), -4);
+    const suggestions = suggestClips(words, 3, 30);
+    expect(suggestions.every((clip) => clip.start >= 0 && clip.end <= 30)).toBe(true);
+  });
+
+  it("does not bridge a long pause between otherwise useful passages", () => {
+    const opening = wordsFrom("Architects sketch narrow courtyards beside cedar trees while morning sunlight enters through tall windows illuminating handmade tiles across quiet kitchens.".split(" "), 0);
+    opening[opening.length - 1].text = "kitchens.";
+    const later = wordsFrom("Tomorrow's auditor carefully measures annual expenses because hidden utility charges alter family budgets before buyers compare coastal properties downtown.".split(" "), 28);
+    const suggestions = suggestClips([...opening, ...later], 10, 60);
+    expect(suggestions.length).toBeGreaterThanOrEqual(2);
+    expect(suggestions.every((clip) => !(clip.start < opening[opening.length - 1].end && clip.end > later[0].start))).toBe(true);
+  });
+
+  it("returns no suggestions when the requested maximum is zero or invalid", () => {
+    const words = wordsFrom("The complete explanation gives viewers useful context and a practical conclusion for making a better decision today.".split(" "));
+    expect(suggestClips(words, 0)).toEqual([]);
+    expect(suggestClips(words, Number.NaN)).toEqual([]);
+  });
+
+  it("keeps question setup with its answer when neither side is long enough alone", () => {
+    const question = wordsFrom(["Why", "should", "buyers", "compare", "several", "homes", "before", "choosing", "one?"], 0);
+    const answer = wordsFrom(["Because", "monthly", "costs", "include", "taxes", "insurance", "fees", "and", "other", "charges", "that", "change", "the", "total."], 5.1);
+    const suggestions = suggestClips([...question, ...answer], 10, 30);
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.some((clip) => clip.transcript.startsWith("Why should buyers") && clip.transcript.endsWith("total."))).toBe(true);
+  });
+
+  it("ignores empty and unusable timestamps without fabricating a candidate", () => {
+    const invalid = [
+      { id: "nan", text: "nonsense", start: Number.NaN, end: 1 },
+      { id: "negative", text: "nonsense", start: -3, end: -2 },
+      { id: "zero", text: "nonsense", start: 1, end: 1 },
+      { id: "infinite", text: "nonsense", start: 1, end: Number.POSITIVE_INFINITY },
+    ] as TranscriptWord[];
+    expect(suggestClips([])).toEqual([]);
+    expect(suggestClips(invalid, 3, 20)).toEqual([]);
+    const valid = wordsFrom("The complete explanation gives viewers useful context and a practical conclusion for making a better decision today.".split(" "));
+    expect(suggestClips(valid, 3, 0)).toEqual([]);
+    expect(suggestClips(valid, 3, Number.NaN)).toEqual([]);
+  });
+
+  it("respects the established 8–60 second candidate range and ranks deterministically", () => {
+    const words = Array.from({ length: 120 }, (_, index) => ({
+      id: `w${index}`,
+      text: index % 10 === 0 ? `The${index}` : index % 10 === 9 ? `word${index}.` : `word${index}`,
+      start: index * 0.55,
+      end: index * 0.55 + 0.38,
+    }));
+    const suggestions = suggestClips(words, 10, 90);
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.every((clip) => clip.end - clip.start >= 8 && clip.end - clip.start <= 60)).toBe(true);
+    expect(suggestClips(words, 10, 90)).toEqual(suggestions);
   });
 
   it("builds timed caption cues and valid SRT/VTT output", () => {
