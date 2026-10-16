@@ -59,3 +59,49 @@ The export remained local. The temporary rendered file and extracted comparison 
 ## Change boundary
 
 The work stays on the dedicated `fix/problem-3-face-tracking` branch. No merge to `main` or deployment was performed. The final correction is limited to face-candidate validation and its tests, plus this QA report; temporary test videos are excluded from the source changes. Problem 1 was not modified.
+
+
+## Focused final re-verification — 2026-10-17
+
+This focused rerun used the same local Pexels hands-occlusion sample (`11-man-hands-occlusion.mp4`, 4096 × 2160, 24.72s) in the real browser preview. The file was served only by the local dev server and was not uploaded.
+
+### Observed long-occlusion sequence
+
+| Time | Tracker state / crop center | Source and preview observation |
+|---|---|---|
+| 5.0s | detected, x=0.566 | Face detected; portrait crop follows it. |
+| 7.0s | detected, x=0.361 | Face still partly visible between the hands. |
+| 7.5–8.0s | held, x=0.361 | Holds the last reliable crop while the hands increasingly obscure the face. |
+| 8.5–16.0s | manual, x=0.500 | Returns to manual center after the 1.35s hold; the face is fully hidden by hands in the inspected source frames, including 10.5s and 14.5s. |
+| 16.5s | detected, x=0.561, confidence=0.571 | The blurred face reappears and is reacquired; the crop returns to it. |
+| 17.0s | detected, x=0.513 | Tracking continues while the visible head position changes in the source. |
+
+The scan again returned `23/51` detected samples, `2` held samples, `26` manual samples, and a longest detection gap of `9.5s`. The manual interval is an unavoidable visibility limitation, not a false detection or a crop failure: there is no visible face for the model to follow during most of it.
+
+### Transition and framing review
+
+The largest sampled crop-center change was held→manual, x=`0.361` to `0.500` over 0.5s (Δx=`0.139`). It was **not a snapped transition**: the browser preview's CSS `object-position` progressed from `30.233%` at 8.0s to `40.125%` at 8.25s and `50.017%` at 8.5s. The inspected preview/source at this point contains only hands; the movement is the expected interpolation to manual center while the face is fully occluded. On reacquisition, the preview progresses from `50.017%` at 16.0s through `54.321%` at 16.25s to `58.660%` at 16.5s. At 17.0s it follows the changed face position at `51.788%`. Visual inspection showed no unexplained snap, and the returning face remains within the portrait crop. No reproducible in-scope defect was found; tracking code was left unchanged.
+
+At all inspected transition points, the shared source crop was `1215 × 2160` within the `4096 × 2160` source (top=0; tested left positions 871–1690, each within `[0, 2881]`). Thus the 9:16 crop remained inside the source-frame bounds.
+
+### Fresh preview/export comparison
+
+A fresh local export from this browser run was WebM/VP9 at `1080 × 1920`, 30 fps, 24.7s. Export frames were compared with the corresponding bounded source crops; SSIM was:
+
+| Time | State | SSIM |
+|---:|---|---:|
+| 8.0s | held | 0.987432 |
+| 8.5s | manual | 0.986027 |
+| 10.5s | manual | 0.974625 |
+| 14.5s | manual | 0.987272 |
+| 16.0s | manual | 0.988383 |
+| 16.5s | reacquired | 0.979587 |
+| 17.0s | tracking | 0.977114 |
+
+The rendered portrait placement agrees with the browser preview across held, manual, reacquisition, and continued tracking states. Remaining pixel differences are consistent with lossy VP9 encoding/resampling; the test establishes framing parity, not bit-identical pixels.
+
+### Final verification status
+
+**VERIFIED FOR THE TESTED SCENARIOS.** No code change was warranted. This result does not imply that all videos, unusual poses, blur levels, or multi-person identity choices are error-free. As before, the detector cannot identify the intended speaker and cannot keep a face centered while it is completely occluded; users should review and, if needed, adjust the crop before export. `pnpm check`, `pnpm test -- --run` (52/52), and `pnpm build` passed in this final run; the build retains the existing non-blocking platform-config and large-chunk warnings. `git diff --check` was clean before this report-only update and is rerun before commit.
+
+This verification remains isolated to `fix/problem-3-face-tracking`; no merge to `main`, deployment, transcription/Problem 1, or clip-selection/Problem 2 changes were made.
