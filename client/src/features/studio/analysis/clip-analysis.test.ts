@@ -121,6 +121,7 @@ describe("local transcript analysis", () => {
     expect(suggestClips([])).toEqual([]);
     expect(suggestClips(invalid, 3, 20)).toEqual([]);
     const valid = wordsFrom("The complete explanation gives viewers useful context and a practical conclusion for making a better decision today.".split(" "));
+    expect(suggestClips(valid, 3, 6)).toEqual([]);
     expect(suggestClips(valid, 3, 0)).toEqual([]);
     expect(suggestClips(valid, 3, Number.NaN)).toEqual([]);
   });
