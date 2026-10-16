@@ -15,7 +15,7 @@ import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features
 import { trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
-import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type VideoMetadata } from "@/features/studio/types";
+import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type TranscriptionWarningCode, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
 import "@/features/studio/studio.css";
@@ -56,6 +56,19 @@ function prettyDate(timestamp: number): string {
 
 function sourceCues(project: StudioProject): CaptionCue[] {
   return project.editedCues.length ? project.editedCues : buildCaptionCues(project.words);
+}
+
+function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
+  const messages: string[] = [];
+  if (codes.includes("timestamp-outside-source-tail")) messages.push("Some final model timestamps extended beyond the decoded audio window and were reviewed against the source boundary.");
+  else if (codes.includes("timestamp-outside-audio-window")) messages.push("Some model timestamps fell outside the decoded audio window and were reviewed.");
+  if (codes.includes("audio-activity-after-last-word")) messages.push("Audio continues after the last accepted word; the final seconds were rechecked locally.");
+  if (codes.includes("tail-recovery-added-words")) messages.push("The tail recheck recovered additional timed words.");
+  if (codes.includes("expanded-multiword-chunk")) messages.push("Whisper returned a multiword timestamp chunk; it was split across its original interval for review.");
+  if (codes.includes("tail-word-time-clamped")) messages.push("A final word extended beyond the decoded tail; its end was clipped to the source boundary for review.");
+  if (codes.includes("suspicious-word-duration")) messages.push("An implausibly long word timestamp was excluded for review.");
+  if (codes.includes("conflicting-overlap-words")) messages.push("Overlapping windows disagreed near a boundary; review the transcript.");
+  return messages.join(" ");
 }
 
 function estimateOutputBytes(clips: ClipSuggestion[], settings: StudioSettings): number {
@@ -349,12 +362,14 @@ export default function Studio() {
     const controller = new AbortController();
     analysisController.current = controller;
     try {
-      const words = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      const words = transcription.words;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
         words,
+        transcriptionWarnings: transcription.warnings,
         editedCues: buildCaptionCues(words),
         translatedCues: [],
         translatedLanguage: "none",
@@ -367,8 +382,9 @@ export default function Studio() {
       commitProject(next);
       setSelectedForBatch(suggestions.map((clip) => clip.id));
       const reviewCount = suggestions.filter((clip) => clip.quality === "review").length;
-      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}` : "The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.");
-      if (suggestions.length) setStep("select");
+      const warningNotice = transcription.warnings.length ? ` ${transcriptionWarningText(transcription.warnings)}` : "";
+      setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}${warningNotice}` : `The words were transcribed, but no short self-contained segments were found. The full timed transcript is ready for review; add a manual clip if you want to edit it.${warningNotice}`);
+      setStep("select");
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
     } finally {
@@ -749,6 +765,7 @@ export default function Studio() {
         {(error || notice) && <div className={`studio-alert${error ? " studio-alert--error" : " studio-alert--notice"}`} role={error ? "alert" : "status"}>
           {error ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{error || notice}</span>{error && <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button>}
         </div>}
+        {project?.transcriptionWarnings?.length ? <div className="studio-inline-warning" role="status"><AlertTriangle size={16} /><span>{transcriptionWarningText(project.transcriptionWarnings)}</span></div> : null}
 
         <section className="studio-step-panel" aria-labelledby="step-title">
           <div className="studio-step-panel__heading">
@@ -779,7 +796,7 @@ export default function Studio() {
               {sourceFile && sourceFile.size >= LARGE_FILE_WARNING_BYTES && <p className="studio-inline-warning"><AlertTriangle size={15} />This is a larger local file. Speech analysis is chunked, but browser memory and codec support still depend on the device. Export longer clips one at a time when possible.</p>}
               {sourceFile && project && <div className="studio-analysis-box">
                 <div className="studio-panel-heading"><span className="studio-panel-heading__index">AI</span><div><p>LOCAL SPEECH ANALYSIS</p><h3>Find the moments in the words.</h3></div></div>
-                <p className="studio-small-copy">Whisper Tiny runs in a worker on this device. First analysis may download about 41 MB of model files plus a 26.9 MB ONNX browser runtime (transfer compression and cache vary). Your video and transcript are not uploaded.</p>
+                <p className="studio-small-copy">Whisper runs in a worker on this device. English uses the more accurate Whisper Base model; other languages use Whisper Tiny. First analysis downloads the selected local model plus the ONNX browser runtime (transfer compression and cache vary). Your video and transcript are not uploaded.</p>
                 <div className="studio-analysis-controls">
                   <label className="studio-field">Speech language<select value={project.sourceLanguage} onChange={(event) => commitProject({ ...project, sourceLanguage: event.target.value })}>{LANGUAGE_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
                   {!isAnalyzing ? <button type="button" className="studio-button studio-button--dark" onClick={() => void runTranscription()} disabled={!metadata?.hasAudio}><Sparkles size={16} />Analyze speech on this device</button> : <button type="button" className="studio-button studio-button--quiet" onClick={cancelAnalysis}><X size={15} />Stop analysis</button>}
@@ -914,7 +931,7 @@ export default function Studio() {
         </section>
 
         <footer className="studio-footer"><span>FRAME &amp; KEY / LOCAL STUDIO</span><p>Open source tools. No media uploads. No payment system.</p><a href="/">Back to Frame &amp; Key</a>
-          <details className="studio-footer-credits"><summary>Model and open-source credits</summary><p>Mediabunny (MPL-2.0), Transformers.js and TensorFlow.js (Apache-2.0), and fflate (MIT).</p><p><a href="https://huggingface.co/Xenova/whisper-tiny" target="_blank" rel="noreferrer">Whisper Tiny · Apache-2.0</a>. Optional English→French/Spanish/German OPUS-MT models are credited to Helsinki-NLP under CC BY 4.0: <a href="https://huggingface.co/onnx-community/opus-mt-en-fr" target="_blank" rel="noreferrer">French</a>, <a href="https://huggingface.co/onnx-community/opus-mt-en-es" target="_blank" rel="noreferrer">Spanish</a> and <a href="https://huggingface.co/onnx-community/opus-mt-en-de" target="_blank" rel="noreferrer">German</a>. Model files download only when you run the related local feature; selected Q8 translation models are about 215–235 MiB per language. They run on CPU via WebAssembly; WebGPU is not required.</p><p>Videos, audio and transcripts stay on this device. See the project’s THIRD_PARTY_NOTICES.md for full package and model sources.</p></details>
+          <details className="studio-footer-credits"><summary>Model and open-source credits</summary><p>Mediabunny (MPL-2.0), Transformers.js and TensorFlow.js (Apache-2.0), and fflate (MIT).</p><p><a href="https://huggingface.co/Xenova/whisper-base.en" target="_blank" rel="noreferrer">Whisper Base English · Apache-2.0</a> is used for English speech; other languages use <a href="https://huggingface.co/Xenova/whisper-tiny" target="_blank" rel="noreferrer">Whisper Tiny · Apache-2.0</a>. Optional English→French/Spanish/German OPUS-MT models are credited to Helsinki-NLP under CC BY 4.0: <a href="https://huggingface.co/onnx-community/opus-mt-en-fr" target="_blank" rel="noreferrer">French</a>, <a href="https://huggingface.co/onnx-community/opus-mt-en-es" target="_blank" rel="noreferrer">Spanish</a> and <a href="https://huggingface.co/onnx-community/opus-mt-en-de" target="_blank" rel="noreferrer">German</a>. Model files download only when you run the related local feature. They run on CPU via WebAssembly; WebGPU is not required.</p><p>Videos, audio and transcripts stay on this device. See the project’s THIRD_PARTY_NOTICES.md for full package and model sources.</p></details>
         </footer>
       </main>
     </div>
