@@ -10,10 +10,13 @@ interface Sentence {
 }
 
 const HOOK_TERMS = /\b(why|how|what|when|mistake|truth|secret|never|always|first|best|before|after|because|important|remember|number|cost|price|market|buyer|seller|home|property|real estate)\b/i;
+const CONTEXT_DEPENDENT_OPENERS = new Set(["he", "she", "it", "they", "this", "that", "these", "those", "which", "who"]);
 const FILLERS = new Set(["um", "uh", "erm", "you", "know", "like", "so"]);
 const MIN_CLIP_DURATION_SECONDS = 8;
 const MAX_CLIP_DURATION_SECONDS = 60;
 const MAX_INTERNAL_PAUSE_SECONDS = 2.5;
+const MAX_WORD_DURATION_SECONDS = 1.5;
+const MAX_WORD_OVERLAP_SECONDS = 0.08;
 const TIMESTAMP_TOLERANCE_SECONDS = 0.05;
 const TOPIC_TAGS: Array<[RegExp, string]> = [
   [/\b(real estate|realtor|realtors|agent|agents|broker|brokers)\b/i, "realestate"],
@@ -42,6 +45,71 @@ export function joinTranscriptWords(words: TranscriptWord[]): string {
 
 function joinWords(words: TranscriptWord[]): string { return joinTranscriptWords(words); }
 
+/**
+ * Whisper's word aligner can emit tokens that span many seconds or overlap
+ * neighboring tokens. Do not let those malformed ranges bridge pauses, stretch
+ * captions across unrelated speech, or make a clip appear to have more context.
+ */
+function normalizeTimedWords(words: TranscriptWord[], sourceDuration = Number.POSITIVE_INFINITY): TranscriptWord[] {
+  const ordered = [...words].filter((word) => {
+    const duration = word.end - word.start;
+    if (!word.text.trim() || !Number.isFinite(word.start) || !Number.isFinite(word.end) || duration < 0.04) return false;
+    if (duration > MAX_WORD_DURATION_SECONDS) return false;
+    if (word.start < -TIMESTAMP_TOLERANCE_SECONDS || word.end <= 0 || word.start >= sourceDuration) return false;
+    return word.end <= sourceDuration + TIMESTAMP_TOLERANCE_SECONDS;
+  }).map((word) => ({
+    ...word,
+    start: Math.max(0, word.start),
+    end: Math.min(sourceDuration, word.end),
+  })).filter((word) => word.end - word.start >= 0.04)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const normalized: TranscriptWord[] = [];
+  for (const word of ordered) {
+    const previous = normalized[normalized.length - 1];
+    if (!previous || word.start >= previous.end - MAX_WORD_OVERLAP_SECONDS) {
+      normalized.push(word);
+      continue;
+    }
+
+    const sameStart = Math.abs(word.start - previous.start) <= MAX_WORD_OVERLAP_SECONDS;
+    if (sameStart) {
+      // Duplicate/competing alignments at the same instant: retain the shorter,
+      // more plausible interval rather than inventing a long caption window.
+      if (word.end - word.start < previous.end - previous.start) normalized[normalized.length - 1] = word;
+      continue;
+    }
+
+    // Small alignment drift can make adjacent words overlap. End the earlier
+    // word at the next onset; discard it only if that leaves no usable interval.
+    const trimmedPrevious = { ...previous, end: word.start };
+    if (trimmedPrevious.end - trimmedPrevious.start >= 0.04) {
+      normalized[normalized.length - 1] = trimmedPrevious;
+      normalized.push(word);
+    } else if (word.end - word.start < previous.end - previous.start) {
+      normalized[normalized.length - 1] = word;
+    }
+  }
+  return normalized;
+}
+
+function countTimingAnomalies(words: TranscriptWord[], start: number, end: number): number {
+  const inRange = words.filter((word) => Number.isFinite(word.start) && Number.isFinite(word.end)
+    && word.start < end && word.end > start).sort((a, b) => a.start - b.start || a.end - b.end);
+  let count = inRange.filter((word) => word.end - word.start > MAX_WORD_DURATION_SECONDS).length;
+  let furthestEnd = Number.NEGATIVE_INFINITY;
+  let furthestEndIsLong = false;
+  for (const word of inRange) {
+    const isLong = word.end - word.start > MAX_WORD_DURATION_SECONDS;
+    if (!isLong && !furthestEndIsLong && word.start < furthestEnd - MAX_WORD_OVERLAP_SECONDS) count += 1;
+    if (word.end > furthestEnd) {
+      furthestEnd = word.end;
+      furthestEndIsLong = isLong;
+    }
+  }
+  return count;
+}
+
 export function toWordCues(cues: CaptionCue[]): CaptionCue[] {
   return cues.flatMap((cue) => cue.words.length
     ? cue.words.map((word) => ({ id: `${WORD_CUE_PREFIX}${word.id}`, start: word.start, end: word.end, text: word.text, words: [word] }))
@@ -50,17 +118,7 @@ export function toWordCues(cues: CaptionCue[]): CaptionCue[] {
 
 export function sentenceGroups(words: TranscriptWord[], sourceDuration = Number.POSITIVE_INFINITY): Sentence[] {
   if (sourceDuration !== Number.POSITIVE_INFINITY && (!Number.isFinite(sourceDuration) || sourceDuration <= 0)) return [];
-  const validSourceDuration = sourceDuration;
-  const ordered = [...words].filter((word) => {
-    if (!word.text.trim() || !Number.isFinite(word.start) || !Number.isFinite(word.end) || word.end <= word.start) return false;
-    if (word.start < -TIMESTAMP_TOLERANCE_SECONDS || word.end <= 0 || word.start >= validSourceDuration) return false;
-    return word.end <= validSourceDuration + TIMESTAMP_TOLERANCE_SECONDS;
-  }).map((word) => ({
-    ...word,
-    start: Math.max(0, word.start),
-    end: Math.min(validSourceDuration, word.end),
-  })).filter((word) => word.end - word.start >= 0.04)
-    .sort((a, b) => a.start - b.start);
+  const ordered = normalizeTimedWords(words, sourceDuration);
   const sentences: Sentence[] = [];
   let current: TranscriptWord[] = [];
   let currentStartsAtBoundary = true;
@@ -97,7 +155,7 @@ export function sentenceGroups(words: TranscriptWord[], sourceDuration = Number.
   return sentences;
 }
 
-function scoreWindow(sentences: Sentence[], start: number, end: number, text: string): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
+function scoreWindow(sentences: Sentence[], start: number, end: number, text: string, sourceWords: TranscriptWord[]): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
   const duration = end - start;
   const clipWords = sentences.flatMap((sentence) => sentence.words);
   const words = text.split(/\s+/).filter(Boolean);
@@ -120,6 +178,7 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
   score -= Math.min(1.2, fillerCount * 0.15);
   const normalized = words.map((word) => word.toLowerCase().replace(/[^a-z0-9']/g, "")).filter(Boolean);
   const uniqueRatio = normalized.length ? new Set(normalized).size / normalized.length : 0;
+  const adjacentRepeatedWords = normalized.slice(1).filter((word, index) => word.length >= 3 && word === normalized[index]).length;
   const bigrams = new Map<string, number>();
   for (let index = 1; index < normalized.length; index += 1) {
     const bigram = `${normalized[index - 1]} ${normalized[index]}`;
@@ -129,10 +188,13 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
   const warningParts: string[] = [];
   const firstToken = clipWords[0]?.text.trim() ?? "";
   const firstSentence = sentences[0];
+  const firstWord = firstToken.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, "");
   const startsLowercase = /^[a-z]/.test(firstToken);
   const startsWithFragment = startsLowercase && (firstSentence?.words.length ?? 0) > 3;
   const startsWithWeakFragment = startsLowercase && (firstSentence?.words.length ?? 0) <= 2 && !HOOK_TERMS.test(firstSentence?.text ?? "");
+  const startsWithContextDependentOpener = CONTEXT_DEPENDENT_OPENERS.has(firstWord) && (firstSentence?.words.length ?? 0) > 2;
   const overlappingWords = clipWords.slice(1).filter((word, index) => word.start < clipWords[index].end - 0.08).length;
+  const timingAnomalies = countTimingAnomalies(sourceWords, start, end);
   if (startsWithFragment) {
     score -= 3;
     warningParts.push("the clip starts with a likely continuation rather than a clean sentence");
@@ -141,13 +203,25 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     score -= 3;
     warningParts.push("the opening phrase is too short and lacks a clear topic");
   }
-  if (overlappingWords >= 2) {
+  if (startsWithContextDependentOpener) {
+    score -= 2.5;
+    warningParts.push("the opening pronoun or reference may depend on context outside the clip");
+  }
+  if (overlappingWords >= 1) {
     score -= 2.5;
     warningParts.push("the speech timestamps overlap unusually");
+  }
+  if (timingAnomalies > 0) {
+    score -= Math.min(3, timingAnomalies * 1.5);
+    warningParts.push("unreliable word timings were omitted or corrected before ranking");
   }
   if (normalized.length >= 20 && uniqueRatio < 0.52) {
     score -= 3.5;
     warningParts.push("the transcript repeats the same words unusually often");
+  }
+  if (adjacentRepeatedWords > 0) {
+    score -= Math.min(2, adjacentRepeatedWords * 1.5);
+    warningParts.push("the transcript repeats an adjacent word and needs a listen-through");
   }
   if (repeatedBigrams >= 2) {
     score -= Math.min(3, repeatedBigrams * 0.9);
@@ -208,7 +282,7 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDurati
       const duration = next.end - group[0].start;
       if (duration < MIN_CLIP_DURATION_SECONDS || duration > MAX_CLIP_DURATION_SECONDS) continue;
       const text = group.map((sentence) => sentence.text).join(" ");
-      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text);
+      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text, words);
       if (qualityWarning && score < 3.5) continue;
       const wordsInClip = group.flatMap((sentence) => sentence.words);
       const copy = makePostCopy(text, group[0].start);
@@ -246,7 +320,7 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDurati
 }
 
 export function buildCaptionCues(words: TranscriptWord[], maxWords = 12, maxDuration = 4.2): CaptionCue[] {
-  const ordered = [...words].sort((a, b) => a.start - b.start);
+  const ordered = normalizeTimedWords(words);
   const cues: CaptionCue[] = [];
   let group: TranscriptWord[] = [];
   const finish = () => {
@@ -268,7 +342,7 @@ export function buildCaptionCues(words: TranscriptWord[], maxWords = 12, maxDura
 
 export function speechKeepRanges(words: TranscriptWord[], start: number, end: number, thresholdSeconds: number, pad = 0.12): SpeechRange[] {
   if (end <= start) return [];
-  const ordered = [...words].filter((word) => word.end > start && word.start < end).sort((a, b) => a.start - b.start);
+  const ordered = normalizeTimedWords(words).filter((word) => word.end > start && word.start < end);
   if (!ordered.length) return [{ start, end }];
   const ranges: SpeechRange[] = [];
   let rangeStart = Math.max(start, ordered[0].start - pad);
