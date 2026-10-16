@@ -15,6 +15,69 @@ describe("local transcript analysis", () => {
     expect(sentences[1].text).toBe("A second point matters!");
   });
 
+  it("drops implausibly long word timings before clips, captions, and silence removal", () => {
+    const first = wordsFrom("The first complete explanation gives buyers useful context for the changing property market and shows how monthly costs affect a family's long term housing choice today.".split(" "));
+    first[first.length - 1].text = "today.";
+    const impossible = { id: "bad-span", text: "all.", start: first[first.length - 1].end + 0.12, end: first[first.length - 1].end + 3.62 };
+    const second = wordsFrom("Another separate explanation measures taxes insurance utilities maintenance and lender fees before buyers compare the complete monthly payment for a suitable home.".split(" "), 17.5);
+    second[second.length - 1].text = "home.";
+    const source = [...first, impossible, ...second];
+
+    expect(sentenceGroups(source, 30).flatMap((sentence) => sentence.words).some((word) => word.id === "bad-span")).toBe(false);
+    expect(buildCaptionCues(source).flatMap((cue) => cue.words).some((word) => word.id === "bad-span")).toBe(false);
+    const suggestions = suggestClips(source, 10, 30);
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.every((clip) => !(clip.transcript.includes("property market") && clip.transcript.includes("Another separate")))).toBe(true);
+    const ranges = speechKeepRanges(source, 0, 30, 1.2, 0);
+    expect(ranges.some((range) => range.start <= first[0].start && range.end >= second[second.length - 1].end)).toBe(false);
+  });
+
+  it("resolves duplicate overlapping word alignments to one short, usable interval", () => {
+    const words: TranscriptWord[] = [
+      { id: "the", text: "The", start: 1, end: 1.2 },
+      { id: "small", text: "small", start: 1.2, end: 1.4 },
+      { id: "room-long", text: "room", start: 1.4, end: 2.2 },
+      { id: "room-short", text: "room.", start: 1.408, end: 1.648 },
+    ];
+    const sentences = sentenceGroups(words);
+    expect(sentences).toHaveLength(1);
+    expect(sentences[0].text).toBe("The small room.");
+    expect(sentences[0].words.at(-1)).toMatchObject({ id: "room-short", start: 1.408, end: 1.648 });
+    expect(buildCaptionCues(words).flatMap((cue) => cue.words).map((word) => word.id)).toEqual(["the", "small", "room-short"]);
+    expect(speechKeepRanges(words, 0, 3, 0.2, 0).at(-1)?.end).toBe(1.648);
+  });
+
+  it("marks a viable clip for review when its source interval contains a pathological word span", () => {
+    const source = wordsFrom("Why buyers should compare monthly payments before they choose homes because taxes insurance utilities maintenance and closing fees can change the actual budget for families during unexpected rate shifts across the local property market every year and written offers should show each fixed cost before signing any purchase agreement today.".split(" "));
+    source[source.length - 1].text = "today.";
+    const baseWord = source[20];
+    const impossible = { id: "bad-span", text: "today", start: baseWord.start + 0.1, end: baseWord.start + 3.1 };
+    const candidate = suggestClips([...source, impossible], 10, 60).find((clip) => clip.start === source[0].start);
+    expect(candidate).toBeDefined();
+    expect(candidate?.quality).toBe("review");
+    expect(candidate?.qualityWarning).toContain("unreliable word timings");
+  });
+
+  it("marks adjacent duplicate transcript words for review instead of calling the clip reliable", () => {
+    const source = wordsFrom("Why buyers should compare monthly payments before they choose homes because taxes insurance utilities maintenance and closing fees can change the actual budget for families during unexpected rate shifts across the local property market every year and written offers should show each fixed cost before signing any purchase agreement today.".split(" "));
+    source[source.length - 1].text = "today.";
+    const original = source.find((word) => word.text === "monthly");
+    expect(original).toBeDefined();
+    const repeated = { ...original!, id: "duplicate-monthly", start: original!.end + 0.03, end: original!.start + 0.54 };
+    const candidate = suggestClips([...source, repeated], 10, 60).find((clip) => clip.start === source[0].start);
+    expect(candidate).toBeDefined();
+    expect(candidate?.quality).toBe("review");
+    expect(candidate?.qualityWarning).toContain("repeats an adjacent word");
+  });
+
+  it("deprioritizes a long cut that opens on a context-dependent pronoun", () => {
+    const words = wordsFrom("He makes it sort of cozier. The first useful explanation gives buyers context about how property taxes insurance monthly costs and yearly repairs change a family's budget before anyone considers the right home in the local market today.".split(" "));
+    words[5].text = "cozier.";
+    words[words.length - 1].text = "today.";
+    const suggestions = suggestClips(words, 10, 60);
+    expect(suggestions.some((clip) => clip.transcript.startsWith("He makes it"))).toBe(false);
+  });
+
   it("only proposes text that appears in the transcript", () => {
     const source = wordsFrom("The housing market changed this year and buyers should compare the actual cost before choosing a property because the details can change the full monthly payment.".split(" "));
     const suggestions = suggestClips(source);
