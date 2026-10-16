@@ -35,6 +35,7 @@ const FULL_FRAME_MAX_EDGE = 640;
 const ROI_SIZE = 512;
 const MAX_HOLD_SECONDS = 1.35;
 const ROI_SWEEP_SCORE_THRESHOLD = 0.62;
+const REACQUISITION_MIN_CONFIDENCE = 0.56;
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
@@ -145,6 +146,45 @@ function keypointCoverage(face: DetectedFace, width: number, height: number): nu
   return valid.length / face.keypoints.length;
 }
 
+/** MediaPipe's named landmarks must form a plausible eye–nose–mouth layout, not just a box. */
+function hasPlausibleFaceLandmarks(face: DetectedFace, box: FaceBox): boolean {
+  const points = new Map((face.keypoints ?? []).flatMap((point) => {
+    if (!point.name || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return [];
+    return [[point.name.toLowerCase(), point] as const];
+  }));
+  const rightEye = points.get("righteye");
+  const leftEye = points.get("lefteye");
+  const nose = points.get("nosetip");
+  const mouth = points.get("mouthcenter");
+  if (!rightEye || !leftEye || !nose || !mouth) return false;
+
+  const eyeSpan = Math.abs(rightEye.x - leftEye.x);
+  const eyeLine = (rightEye.y + leftEye.y) / 2;
+  const eyeCenterX = (rightEye.x + leftEye.x) / 2;
+  const minHorizontalTolerance = box.width * 0.24;
+  const eyeToNoseX = Math.abs(nose.x - eyeCenterX);
+  const eyeToMouthX = Math.abs(mouth.x - eyeCenterX);
+  const eyeMinX = Math.min(rightEye.x, leftEye.x);
+  const eyeMaxX = Math.max(rightEye.x, leftEye.x);
+  const noseOutsideEyeSpan = Math.max(0, eyeMinX - nose.x, nose.x - eyeMaxX);
+  const noseBelowEyes = nose.y - eyeLine;
+  const mouthBelowNose = mouth.y - nose.y;
+
+  return eyeSpan >= box.width * 0.08
+    && eyeSpan <= box.width * 0.86
+    // A narrow eye pair with a nose far outside it is a common hand/texture false positive.
+    && (eyeSpan >= box.width * 0.15 || noseOutsideEyeSpan <= box.width * 0.14)
+    && Math.abs(rightEye.y - leftEye.y) <= box.height * 0.28
+    && eyeLine >= box.yMin - box.height * 0.08
+    && eyeLine <= box.yMin + box.height * 0.62
+    && noseBelowEyes >= -box.height * 0.08
+    && noseBelowEyes <= box.height * 0.62
+    && eyeToNoseX <= Math.max(eyeSpan * 0.72, minHorizontalTolerance)
+    && mouthBelowNose >= -box.height * 0.04
+    && mouthBelowNose <= box.height * 0.58
+    && eyeToMouthX <= Math.max(eyeSpan * 0.82, minHorizontalTolerance);
+}
+
 /** Selects one face using geometry and temporal continuity. Its score is not model probability. */
 export function chooseFaceCandidate(
   candidates: DetectedFace[],
@@ -160,6 +200,7 @@ export function chooseFaceCandidate(
     const visible = visibleFace(face, frameWidth, frameHeight);
     if (!visible) return [];
     const box = visible.box;
+    if (!hasPlausibleFaceLandmarks(face, box)) return [];
     const x = (box.xMin + box.width / 2) / frameWidth;
     const y = (box.yMin + box.height / 2) / frameHeight;
     const areaFraction = (box.width * box.height) / frameArea;
@@ -187,7 +228,9 @@ export function chooseFaceCandidate(
     return [{ time: 0, box, x, y, confidence: clamp(score, 0, 1) }];
   });
   ranked.sort((a, b) => b.confidence - a.confidence);
-  return ranked[0] ?? null;
+  const best = ranked[0] ?? null;
+  if (best && previous && elapsed > MAX_HOLD_SECONDS && best.confidence < REACQUISITION_MIN_CONFIDENCE) return null;
+  return best;
 }
 
 /** Expands a face box for conservative headroom and upper-frame composition; this is not body detection. */

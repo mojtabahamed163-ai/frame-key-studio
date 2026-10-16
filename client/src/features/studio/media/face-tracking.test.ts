@@ -16,12 +16,12 @@ import {
 const face = (xMin: number, yMin = 240, width = 120, height = 150) => ({
   box: { xMin, yMin, width, height },
   keypoints: [
-    { x: xMin + width * 0.35, y: yMin + height * 0.35 },
-    { x: xMin + width * 0.65, y: yMin + height * 0.35 },
-    { x: xMin + width * 0.5, y: yMin + height * 0.52 },
-    { x: xMin + width * 0.5, y: yMin + height * 0.72 },
-    { x: xMin + width * 0.1, y: yMin + height * 0.5 },
-    { x: xMin + width * 0.9, y: yMin + height * 0.5 },
+    { name: "rightEye", x: xMin + width * 0.35, y: yMin + height * 0.35 },
+    { name: "leftEye", x: xMin + width * 0.65, y: yMin + height * 0.35 },
+    { name: "noseTip", x: xMin + width * 0.5, y: yMin + height * 0.52 },
+    { name: "mouthCenter", x: xMin + width * 0.5, y: yMin + height * 0.72 },
+    { name: "rightEarTragion", x: xMin + width * 0.1, y: yMin + height * 0.5 },
+    { name: "leftEarTragion", x: xMin + width * 0.9, y: yMin + height * 0.5 },
   ],
 });
 
@@ -82,6 +82,48 @@ describe("local portrait face framing", () => {
     expect(rejected).toBeNull();
   });
 
+  it("rejects a hand-like box whose MediaPipe eye, nose, and mouth landmarks do not form a face", () => {
+    const handLike = face(210, 240, 120, 150);
+    handLike.keypoints = [
+      { name: "rightEye", x: 264, y: 298 },
+      { name: "leftEye", x: 268, y: 300 },
+      { name: "noseTip", x: 317, y: 305 },
+      { name: "mouthCenter", x: 228, y: 350 },
+      { name: "rightEarTragion", x: 222, y: 315 },
+      { name: "leftEarTragion", x: 320, y: 315 },
+    ];
+    const selected = chooseFaceCandidate([handLike], 1920, 1080, observation(0, 210), 0.5);
+    expect(selected).toBeNull();
+  });
+
+  it("rejects the narrow-eye, off-axis-nose pattern observed on a hand filling the frame", () => {
+    const handLike = {
+      box: { xMin: 200, yMin: 100, width: 1000, height: 700 },
+      keypoints: [
+        { name: "rightEye", x: 596, y: 374 },
+        { name: "leftEye", x: 706, y: 382 },
+        { name: "noseTip", x: 857, y: 550 },
+        { name: "mouthCenter", x: 836, y: 600 },
+        { name: "rightEarTragion", x: 270, y: 260 },
+        { name: "leftEarTragion", x: 530, y: 273 },
+      ],
+    };
+    expect(chooseFaceCandidate([handLike], 1920, 1080, null, 0)).toBeNull();
+  });
+
+  it("requires stronger evidence to reacquire after the temporary hold window", () => {
+    const previous = observation(0, 1250);
+    const candidate = face(1640);
+    expect(chooseFaceCandidate([candidate], 1920, 1080, previous, 0.5)).not.toBeNull();
+    expect(chooseFaceCandidate([candidate], 1920, 1080, previous, 2)).toBeNull();
+  });
+
+  it("requires named facial landmarks rather than accepting an isolated detector box", () => {
+    const candidate = face(210, 240, 120, 150);
+    candidate.keypoints = [];
+    expect(chooseFaceCandidate([candidate], 1920, 1080, null, 0)).toBeNull();
+  });
+
   it("uses IoU to measure face-box continuity", () => {
     const box = { xMin: 10, yMin: 20, width: 100, height: 120 };
     expect(intersectionOverUnion(box, box)).toBe(1);
@@ -100,6 +142,20 @@ describe("local portrait face framing", () => {
     expect(frames[2].confidence).toBeLessThan(frames[1].confidence);
     expect(frames[3].x).toBe(0.78);
     expect(frames[3].confidence).toBe(0);
+  });
+
+  it("interpolates the held-to-manual fallback over the final sample interval", () => {
+    const frames = buildFaceKeyframes([
+      { time: 0, face: observation(0, 600) },
+      { time: 0.5, face: null },
+      { time: 1.0, face: null },
+      { time: 1.5, face: null },
+      { time: 2.0, face: null },
+    ], 1920, 1080, 0.78, 0.52);
+    const transition = faceCenterAt(frames, 1.25);
+    expect(frames[3].state).toBe("manual");
+    expect(transition.x).toBeGreaterThan(frames[2].x);
+    expect(transition.x).toBeLessThan(frames[3].x);
   });
 
   it("keeps a single observation as a partial result instead of requiring two keyframes", () => {
