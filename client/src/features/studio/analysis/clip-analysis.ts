@@ -11,6 +11,10 @@ interface Sentence {
 
 const HOOK_TERMS = /\b(why|how|what|when|mistake|truth|secret|never|always|first|best|before|after|because|important|remember|number|cost|price|market|buyer|seller|home|property|real estate)\b/i;
 const FILLERS = new Set(["um", "uh", "erm", "you", "know", "like", "so"]);
+const MIN_CLIP_DURATION_SECONDS = 8;
+const MAX_CLIP_DURATION_SECONDS = 60;
+const MAX_INTERNAL_PAUSE_SECONDS = 2.5;
+const TIMESTAMP_TOLERANCE_SECONDS = 0.05;
 const TOPIC_TAGS: Array<[RegExp, string]> = [
   [/\b(real estate|realtor|realtors|agent|agents|broker|brokers)\b/i, "realestate"],
   [/\b(property|properties|listing|listings|home|homes)\b/i, "property"],
@@ -44,8 +48,18 @@ export function toWordCues(cues: CaptionCue[]): CaptionCue[] {
     : [cue]);
 }
 
-export function sentenceGroups(words: TranscriptWord[]): Sentence[] {
-  const ordered = [...words].filter((word) => word.text.trim() && Number.isFinite(word.start) && word.end > word.start)
+export function sentenceGroups(words: TranscriptWord[], sourceDuration = Number.POSITIVE_INFINITY): Sentence[] {
+  if (sourceDuration !== Number.POSITIVE_INFINITY && (!Number.isFinite(sourceDuration) || sourceDuration <= 0)) return [];
+  const validSourceDuration = sourceDuration;
+  const ordered = [...words].filter((word) => {
+    if (!word.text.trim() || !Number.isFinite(word.start) || !Number.isFinite(word.end) || word.end <= word.start) return false;
+    if (word.start < -TIMESTAMP_TOLERANCE_SECONDS || word.end <= 0 || word.start >= validSourceDuration) return false;
+    return word.end <= validSourceDuration + TIMESTAMP_TOLERANCE_SECONDS;
+  }).map((word) => ({
+    ...word,
+    start: Math.max(0, word.start),
+    end: Math.min(validSourceDuration, word.end),
+  })).filter((word) => word.end - word.start >= 0.04)
     .sort((a, b) => a.start - b.start);
   const sentences: Sentence[] = [];
   let current: TranscriptWord[] = [];
@@ -173,8 +187,12 @@ function formatClock(seconds: number): string {
   return `${mins}:${secs}`;
 }
 
-export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggestion[] {
-  const sentences = sentenceGroups(words);
+export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDuration = Number.POSITIVE_INFINITY): ClipSuggestion[] {
+  if (!Number.isFinite(maxClips) || maxClips <= 0) return [];
+  if (sourceDuration !== Number.POSITIVE_INFINITY && (!Number.isFinite(sourceDuration) || sourceDuration <= 0)) return [];
+  const clipLimit = Math.floor(maxClips);
+  if (clipLimit <= 0) return [];
+  const sentences = sentenceGroups(words, sourceDuration);
   if (!sentences.length) return [];
   const candidates: ClipSuggestion[] = [];
 
@@ -182,11 +200,13 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
     const group: Sentence[] = [];
     for (let endIndex = startIndex; endIndex < sentences.length; endIndex += 1) {
       const next = sentences[endIndex];
-      if (group.length && next.end - group[0].start > 45) break;
+      const previous = group[group.length - 1];
+      if (previous && next.start - previous.end > MAX_INTERNAL_PAUSE_SECONDS) break;
+      if (group.length && next.end - group[0].start > MAX_CLIP_DURATION_SECONDS) break;
       group.push(next);
       if (group.some((sentence) => !sentence.complete || !sentence.startsAtBoundary)) continue;
       const duration = next.end - group[0].start;
-      if (duration < 8 || duration > 60) continue;
+      if (duration < MIN_CLIP_DURATION_SECONDS || duration > MAX_CLIP_DURATION_SECONDS) continue;
       const text = group.map((sentence) => sentence.text).join(" ");
       const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text);
       if (qualityWarning && score < 3.5) continue;
@@ -212,7 +232,7 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
     }
   }
 
-  const ranked = candidates.sort((a, b) => b.score - a.score);
+  const ranked = candidates.sort((a, b) => b.score - a.score || a.start - b.start || a.end - b.end);
   const selected: ClipSuggestion[] = [];
   for (const candidate of ranked) {
     const overlaps = selected.some((current) => {
@@ -220,7 +240,7 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3): ClipSuggest
       return overlap > Math.min(current.end - current.start, candidate.end - candidate.start) * 0.25;
     });
     if (!overlaps) selected.push(candidate);
-    if (selected.length >= maxClips) break;
+    if (selected.length >= clipLimit) break;
   }
   return selected.sort((a, b) => a.start - b.start);
 }
