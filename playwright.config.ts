@@ -17,7 +17,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "PORT=4173 NODE_ENV=development pnpm dev",
+    command: "PORT=4173 NODE_ENV=development MANUS_OAUTH_API_URL=https://api.manus.ai pnpm dev",
     url: "http://127.0.0.1:4173/",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
