@@ -20,4 +20,11 @@ describe("subtitle file import", () => {
   it("rejects a file without valid cue timestamps", () => {
     expect(() => parseSubtitleFile("not subtitles" )).toThrow("No valid SRT/VTT");
   });
+
+  it.each(["-00:00:01,000", "00:00:61,000", "00:61:00,000", "-1:20.000", "00:00:01,1234"])(
+    "rejects an invalid timestamp component: %s",
+    (timestamp) => {
+      expect(() => parseSubtitleFile(`1\n${timestamp} --> 00:00:02,000\nCaption`)).toThrow("No valid SRT/VTT");
+    },
+  );
 });

@@ -2,15 +2,17 @@ import type { CaptionCue } from "../types";
 import { formatSrtTime, formatVttTime, toSrt, toVtt } from "./clip-analysis";
 
 function parseTimestamp(value: string): number | null {
-  const parts = value.trim().replace(",", ".").split(":");
-  if (parts.length < 2 || parts.length > 3) return null;
-  const lastParts = parts[parts.length - 1].split(".");
-  const seconds = Number(lastParts[0]);
-  const millis = Number((lastParts[1] ?? "0").padEnd(3, "0").slice(0, 3));
-  const minutes = Number(parts[parts.length - 2]);
-  const hours = parts.length === 3 ? Number(parts[0]) : 0;
-  if (![seconds, millis, minutes, hours].every(Number.isFinite)) return null;
-  return hours * 3600 + minutes * 60 + seconds + millis / 1000;
+  const timestamp = value.trim();
+  const hoursFormat = /^(\d+):([0-5]\d):([0-5]\d)(?:[.,](\d{1,3}))?$/.exec(timestamp);
+  const minutesFormat = /^([0-5]?\d):([0-5]\d)(?:[.,](\d{1,3}))?$/.exec(timestamp);
+  if (!hoursFormat && !minutesFormat) return null;
+  const hours = hoursFormat ? Number(hoursFormat[1]) : 0;
+  const minutes = Number(hoursFormat ? hoursFormat[2] : minutesFormat?.[1]);
+  const seconds = Number(hoursFormat ? hoursFormat[3] : minutesFormat?.[2]);
+  const fraction = hoursFormat?.[4] ?? minutesFormat?.[3] ?? "";
+  const fractionalSeconds = fraction ? Number(`0.${fraction}`) : 0;
+  const result = hours * 3600 + minutes * 60 + seconds + fractionalSeconds;
+  return Number.isFinite(result) ? result : null;
 }
 
 export function parseSubtitleFile(content: string): CaptionCue[] {

@@ -19,20 +19,22 @@ export function safeFileStem(value: string): string {
 }
 
 export function uniqueFilename(filename: string, used: Set<string>): string {
-  if (!used.has(filename)) { used.add(filename); return filename; }
+  const usedKeys = new Set([...used].map((name) => name.toLowerCase()));
+  if (!usedKeys.has(filename.toLowerCase())) { used.add(filename); return filename; }
   const dot = filename.lastIndexOf(".");
   const stem = dot > 0 ? filename.slice(0, dot) : filename;
   const extension = dot > 0 ? filename.slice(dot) : "";
   let index = 2;
   let candidate = `${stem}-${index}${extension}`;
-  while (used.has(candidate)) candidate = `${stem}-${++index}${extension}`;
+  while (usedKeys.has(candidate.toLowerCase())) candidate = `${stem}-${++index}${extension}`;
   used.add(candidate);
   return candidate;
 }
 
 export function createZip(files: Array<{ name: string; data: Uint8Array }>): Blob {
   const entries: Record<string, Uint8Array> = {};
-  for (const file of files) entries[file.name] = file.data;
+  const usedNames = new Set<string>();
+  for (const file of files) entries[uniqueFilename(file.name, usedNames)] = file.data;
   const zip = zipSync(entries, { level: 1 });
   return new Blob([zip], { type: "application/zip" });
 }

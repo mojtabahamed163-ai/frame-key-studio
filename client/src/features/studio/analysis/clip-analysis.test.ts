@@ -153,6 +153,19 @@ describe("local transcript analysis", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]).toMatchObject({ start: 0.5, end: 3, text: cue.text });
   });
+  it("maps a word at source 10.5–10.8 to output 0.5–0.8 and keeps it active at 0.6", () => {
+    const cue = {
+      id: "cue-word",
+      start: 10.5,
+      end: 10.8,
+      text: "timed word",
+      words: [{ id: "word", text: "timed", start: 10.5, end: 10.8 }],
+    };
+    const mapped = mapCaptionCuesToOutput([cue], 10, 16, [{ start: 0, end: 1.5 }, { start: 4, end: 6 }]);
+    expect(mapped[0].words[0].start).toBeCloseTo(0.5);
+    expect(mapped[0].words[0].end).toBeCloseTo(0.8);
+    expect(0.6 >= mapped[0].words[0].start && 0.6 <= mapped[0].words[0].end).toBe(true);
+  });
   it("omits blank draft caption rows from SRT, VTT, and exported cue timelines", () => {
     const blank = { id: "manual-draft", start: 1, end: 2, text: "   ", words: [] };
     expect(toSrt([blank])).toBe("");

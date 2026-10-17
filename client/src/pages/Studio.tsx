@@ -8,7 +8,9 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
+import { applyCaptionCuePatch } from "@/features/studio/analysis/caption-edits";
 import { buildCaptionCues, buildClipSpeechRanges, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { isCurrentFaceTrack, isCurrentSourceOperation, isCurrentTranslation, isOperationOwner, matchesReselectedSource, recoveryProjectAfterOpenFailure } from "@/features/studio/async-guards";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
@@ -98,6 +100,7 @@ export default function Studio() {
   const projectRevision = useRef(0);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
+  const targetLanguageRef = useRef(settings.targetLanguage);
   const [step, setStep] = useState<StepId>("upload");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -151,6 +154,7 @@ export default function Studio() {
     Promise.all([loadSettings(), listProjects()]).then(([loadedSettings, projects]) => {
       if (!alive) return;
       setSettings(loadedSettings);
+      targetLanguageRef.current = loadedSettings.targetLanguage;
       setSavedProjects(projects);
       setLocalStorageReady(true);
       setSaveState("saved");
@@ -230,6 +234,7 @@ export default function Studio() {
 
   function changeSettings(patch: Partial<StudioSettings>) {
     const next = { ...settings, ...patch };
+    targetLanguageRef.current = next.targetLanguage;
     invalidateClipOutputs();
     setSettings(next);
     if (project) commitProject({ ...project, settings: next });
@@ -242,10 +247,11 @@ export default function Studio() {
     setError("");
   }
 
-  async function activateSavedProject(saved: StudioProject, file: File) {
+  async function activateSavedProject(saved: StudioProject, file: File, generation: number) {
     setError("");
     try {
       const info = await inspectVideo(file);
+      if (sourceGeneration.current !== generation) return;
       if (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height)) {
         throw new Error("This video does not match the saved source metadata. Keep the project and choose the original recording.");
       }
@@ -260,13 +266,16 @@ export default function Studio() {
       setMetadata(info);
       setProject(merged);
       setSettings(merged.settings);
+      targetLanguageRef.current = merged.settings.targetLanguage;
       setStep(merged.step);
       setCurrentTime(merged.selectedClipId ? merged.clips.find((item) => item.id === merged.selectedClipId)?.start ?? 0 : 0);
       setSelectedForBatch(merged.clips.map((clip) => clip.id));
       invalidateClipOutputs();
       setPendingProject(null);
     } catch (cause) {
-      if (saved.sourceSavedInOpfs) setPendingProject(saved);
+      if (sourceGeneration.current !== generation) return;
+      const recoveryProject = recoveryProjectAfterOpenFailure(saved);
+      if (recoveryProject) setPendingProject(recoveryProject);
       setError(cause instanceof Error ? cause.message : "Could not reopen this source file.");
     }
   }
@@ -274,22 +283,20 @@ export default function Studio() {
   async function acceptFile(file: File) {
     if (isBusy) { setError("Finish or cancel the current operation before choosing another source."); return; }
     sourceGeneration.current += 1;
+    projectRevision.current += 1;
+    const generation = sourceGeneration.current;
     analysisController.current?.abort();
     faceController.current?.abort();
     translationController.current?.abort();
     setError("");
     setNotice("");
     if (pendingProject) {
-      if (file.size !== pendingProject.sourceSize) {
-        setError("This file size does not match the saved project. Keep the project, then choose its original source file.");
-        return;
-      }
-      if (file.name !== pendingProject.sourceFileName) {
-        setError("This file name does not match the saved project. Keep the project and choose its original source file.");
+      if (!matchesReselectedSource(pendingProject, file)) {
+        setError("This file does not match the saved source identity (name, size, or last modified time). Keep the project, then choose its original source file.");
         return;
       }
       const saved = pendingProject;
-      await activateSavedProject(saved, file);
+      await activateSavedProject(saved, file, generation);
       return;
     }
     if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(file.name)) {
@@ -298,7 +305,9 @@ export default function Studio() {
     }
     try {
       const info = await inspectVideo(file);
+      if (sourceGeneration.current !== generation) return;
       const prefs = await loadSettings().catch(() => settings);
+      if (sourceGeneration.current !== generation) return;
       const projectSettings = { ...prefs, smartFraming: false };
       const next = createProject(file, projectSettings);
       next.duration = info.duration;
@@ -308,6 +317,7 @@ export default function Studio() {
       setSourceFile(file);
       setMetadata(info);
       setSettings(projectSettings);
+      targetLanguageRef.current = projectSettings.targetLanguage;
       setProject(next);
       setStep("upload");
       setCurrentTime(0);
@@ -322,6 +332,7 @@ export default function Studio() {
         : "Video selected. It has not been uploaded to the website.");
       void saveProject(next).then(() => listProjects().then(setSavedProjects)).catch(() => setSaveState("error"));
     } catch (cause) {
+      if (sourceGeneration.current !== generation) return;
       setError(cause instanceof Error ? cause.message : "The browser could not read this video format.");
     }
   }
@@ -335,13 +346,16 @@ export default function Studio() {
   async function openSavedProject(saved: StudioProject) {
     if (isBusy) { setError("Finish or cancel the current operation before opening a saved project."); return; }
     sourceGeneration.current += 1;
+    projectRevision.current += 1;
+    const generation = sourceGeneration.current;
     analysisController.current?.abort();
     faceController.current?.abort();
     translationController.current?.abort();
     setError("");
     const localFile = saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null;
+    if (sourceGeneration.current !== generation) return;
     if (localFile) {
-      await activateSavedProject(saved, localFile);
+      await activateSavedProject(saved, localFile, generation);
       return;
     }
     setPendingProject(saved);
@@ -391,11 +405,19 @@ export default function Studio() {
     const revision = projectRevision.current;
     const projectId = project.id;
     const analyzedFile = sourceFile;
+    const identity = { sourceGeneration: generation, projectRevision: revision, projectId, sourceFile: analyzedFile };
+    const isCurrent = () => isOperationOwner(controller, analysisController.current) && isCurrentSourceOperation(identity, {
+      sourceGeneration: sourceGeneration.current,
+      projectRevision: projectRevision.current,
+      projectId: project.id,
+      sourceFile,
+    });
+    const reportProgress = (progress: AnalysisProgress) => { if (isCurrent()) setAnalysisProgress(progress); };
     try {
-      const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, reportProgress);
+      if (!isCurrent()) return;
       const words = transcription.words;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
-      if (sourceGeneration.current !== generation || projectRevision.current !== revision || projectId !== project.id || sourceFile !== analyzedFile) return;
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
@@ -417,10 +439,12 @@ export default function Studio() {
       setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}${warningNotice}` : `The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.${warningNotice}`);
       if (suggestions.length) setStep("select");
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
+      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
     } finally {
-      setIsAnalyzing(false);
-      analysisController.current = null;
+      if (isOperationOwner(controller, analysisController.current)) {
+        setIsAnalyzing(false);
+        analysisController.current = null;
+      }
     }
   }
 
@@ -530,26 +554,7 @@ export default function Studio() {
       : undefined;
     invalidateClipOutputs(affectedClips);
     const all = (isTranslated ? project.translatedCues : sourceCues(project)).map((item) => ({ ...item }));
-    const nextCues = all.map((item) => {
-      if (item.id !== cue.id) return item;
-      const next = { ...item, ...patch };
-      if (patch.start !== undefined || patch.end !== undefined) {
-        next.start = Math.max(activeClip.start, Math.min(next.start, activeClip.end - 0.05));
-        next.end = Math.max(next.start + 0.05, Math.min(next.end, activeClip.end));
-      }
-      if (patch.text !== undefined) next.words = [];
-      else if (patch.start !== undefined || patch.end !== undefined) {
-        const oldStart = item.start;
-        const oldEnd = item.end;
-        const delta = patch.start !== undefined ? next.start - oldStart : next.end - oldEnd;
-        next.words = item.words.flatMap((word) => {
-          const start = Math.max(next.start, word.start + delta);
-          const end = Math.min(next.end, word.end + delta);
-          return end - start >= 0.04 ? [{ ...word, start, end }] : [];
-        });
-      }
-      return next;
-    });
+    const nextCues = all.map((item) => item.id === cue.id ? applyCaptionCuePatch(item, patch, activeClip.start, activeClip.end) : item);
     if (isTranslated) commitProject({ ...project, translatedCues: nextCues });
     else {
       commitProject({ ...project, editedCues: nextCues, translatedCues: [], translatedLanguage: "none" });
@@ -614,19 +619,29 @@ export default function Studio() {
     const projectId = project.id;
     const clipId = activeClip.id;
     const targetLanguage = settings.targetLanguage;
+    const identity = { projectRevision: revision, projectId, clipId, targetLanguage };
+    const isCurrent = () => isOperationOwner(controller, translationController.current) && isCurrentTranslation(identity, {
+      projectRevision: projectRevision.current,
+      projectId: project.id,
+      clipId: project.selectedClipId ?? "",
+      targetLanguage: targetLanguageRef.current,
+    });
+    const reportProgress = (progress: TranslationProgress) => { if (isCurrent()) setTranslationProgress(progress); };
     try {
       const inClip = sourceCues(project).filter((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end);
-      const translated = await translateCues(inClip, settings.targetLanguage, setTranslationProgress, controller.signal);
-      if (projectRevision.current !== revision || project.id !== projectId || project.selectedClipId !== clipId || settings.targetLanguage !== targetLanguage) return;
+      const translated = await translateCues(inClip, settings.targetLanguage, reportProgress, controller.signal);
+      if (!isCurrent()) return;
       invalidateClipOutputs([activeClip.id]);
       const keep = project.translatedCues.filter((cue) => !inClip.some((source) => cue.id === `translated-${settings.targetLanguage}-${source.id}`));
       commitProject({ ...project, translatedCues: [...keep, ...translated].sort((a, b) => a.start - b.start), translatedLanguage: settings.targetLanguage });
       setNotice(`Translated ${translated.length} caption lines on this device. Word-by-word timing is approximate; review the result before export.`);
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local translation failed.");
+      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local translation failed.");
     } finally {
-      setIsTranslating(false);
-      translationController.current = null;
+      if (isOperationOwner(controller, translationController.current)) {
+        setIsTranslating(false);
+        translationController.current = null;
+      }
     }
   }
 
@@ -642,9 +657,19 @@ export default function Studio() {
     const clipId = activeClip.id;
     const trackedStart = activeClip.start;
     const trackedEnd = activeClip.end;
+    const identity = { sourceGeneration: generation, projectRevision: revision, projectId, clipId, clipStart: trackedStart, clipEnd: trackedEnd };
+    const isCurrent = () => isOperationOwner(controller, faceController.current) && isCurrentFaceTrack(identity, {
+      sourceGeneration: sourceGeneration.current,
+      projectRevision: projectRevision.current,
+      projectId: project.id,
+      clipId: project.selectedClipId ?? "",
+      clipStart: activeClip.start,
+      clipEnd: activeClip.end,
+    });
+    const reportProgress = (progress: FaceTrackingProgress) => { if (isCurrent()) setFaceProgress(progress); };
     try {
-      const keyframes = await trackLargestFace(sourceFile, activeClip.start, activeClip.end, controller.signal, setFaceProgress, { x: settings.manualCropX, y: settings.manualCropY });
-      if (sourceGeneration.current !== generation || projectRevision.current !== revision || project.id !== projectId || project.selectedClipId !== clipId || activeClip.start !== trackedStart || activeClip.end !== trackedEnd) return;
+      const keyframes = await trackLargestFace(sourceFile, activeClip.start, activeClip.end, controller.signal, reportProgress, { x: settings.manualCropX, y: settings.manualCropY });
+      if (!isCurrent()) return;
       const summary = summarizeFaceTrack(keyframes, activeClip.end - activeClip.start);
       invalidateClipOutputs([activeClip.id]);
       commitProject({
@@ -657,10 +682,12 @@ export default function Studio() {
         ? `Face detection returned at ${summary.detectedCount}/${summary.sampleCount} sampled times; held ${summary.heldCount} and used manual framing at ${summary.manualCount}. Longest detection gap: ${summary.longestDetectionGapSeconds.toFixed(1)} s. Review the crop—the tracker does not identify who is speaking.`
         : `Face detection returned at all ${summary.sampleCount} sampled times. The tracker does not identify who is speaking; review the crop before export.`);
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
+      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
     } finally {
-      setIsTrackingFace(false);
-      faceController.current = null;
+      if (isOperationOwner(controller, faceController.current)) {
+        setIsTrackingFace(false);
+        faceController.current = null;
+      }
     }
   }
 

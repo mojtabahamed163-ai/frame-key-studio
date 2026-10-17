@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { cropForPortrait, exportClip, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
-import { uniqueFilename } from "./download";
+import { unzipSync } from "fflate";
+import { cropForPortrait, drawExportFrame, exportClip, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
+import { createZip, uniqueFilename } from "./download";
+import { mapSourceTimeToOutput } from "../analysis/clip-analysis";
+import { DEFAULT_SETTINGS } from "../types";
 import type { ClipSuggestion, StudioProject } from "../types";
 
 describe("video bitrate profile", () => {
@@ -16,6 +19,18 @@ describe("batch filenames", () => {
     expect(uniqueFilename("same.webm", used)).toBe("same.webm");
     expect(uniqueFilename("same.webm", used)).toBe("same-2.webm");
     expect(uniqueFilename("same.webm", used)).toBe("same-3.webm");
+    expect(uniqueFilename("SAME.WEBM", used)).toBe("SAME-4.WEBM");
+  });
+
+  it("keeps duplicate direct ZIP entries instead of silently overwriting one", async () => {
+    const blob = createZip([
+      { name: "same.webm", data: new Uint8Array([1]) },
+      { name: "same.webm", data: new Uint8Array([2]) },
+    ]);
+    const files = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+    expect(Object.keys(files).sort()).toEqual(["same-2.webm", "same.webm"]);
+    expect([...files["same.webm"]]).toEqual([1]);
+    expect([...files["same-2.webm"]]).toEqual([2]);
   });
 });
 
@@ -94,5 +109,60 @@ describe("title-card geometry", () => {
     const card = titleCardGeometry(720, 1280, 3, 36, 25);
     expect(card).toEqual({ x: 25, y: 58, width: 670, height: 160 });
     expect(card.y + card.height).toBeLessThan(1280 * 0.2);
+  });
+});
+
+describe("full-frame and compressed-time rendering", () => {
+  function fakeCanvasContext(width: number, height: number) {
+    return {
+      canvas: { width, height },
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      roundRect: vi.fn(),
+      fill: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 10 })),
+      fillText: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+  }
+
+  it("contains a 720×1440 source in a 720×1280 output without stretching", () => {
+    const context = fakeCanvasContext(720, 1280);
+    let fitted = { width: 0, height: 0 };
+    const sample = {
+      displayWidth: 720,
+      displayHeight: 1440,
+      drawWithFit: vi.fn((target: CanvasRenderingContext2D, options: { fit: string }) => {
+        expect(options.fit).toBe("contain");
+        const scale = Math.min(target.canvas.width / 720, target.canvas.height / 1440);
+        fitted = { width: 720 * scale, height: 1440 * scale };
+      }),
+    };
+    const clip = { start: 0, end: 2, selectedTitle: "Title", titleOptions: [] } as ClipSuggestion;
+    const settings = { ...DEFAULT_SETTINGS, framingMode: "full" as const, showTitleCard: false, showCaptions: false };
+
+    const outputTime = drawExportFrame(context, sample as never, 0, [{ start: 0, end: 2 }], clip, [], [], settings, null);
+
+    expect(outputTime).toBe(0);
+    expect(context.fillRect).toHaveBeenCalledWith(0, 0, 720, 1280);
+    expect(fitted).toEqual({ width: 640, height: 1280 });
+    expect(fitted.width / fitted.height).toBeCloseTo(720 / 1440);
+  });
+
+  it("draws the title at output time zero when the first kept range starts after silence", () => {
+    const context = fakeCanvasContext(720, 1280);
+    const sample = { displayWidth: 720, displayHeight: 1280, drawWithFit: vi.fn() };
+    const clip = { start: 10, end: 20, selectedTitle: "Opening title", titleOptions: [] } as ClipSuggestion;
+    const settings = { ...DEFAULT_SETTINGS, framingMode: "full" as const, showTitleCard: true, showCaptions: false };
+    const ranges = [{ start: 3, end: 5 }, { start: 8, end: 10 }];
+
+    const mapped = mapSourceTimeToOutput(3, ranges);
+    const outputTime = drawExportFrame(context, sample as never, 3, ranges, clip, [], [], settings, null);
+
+    expect(mapped).toBe(0);
+    expect(outputTime).toBe(0);
+    expect(context.fillText).toHaveBeenCalledWith("Opening title", 360, expect.any(Number), expect.any(Number));
   });
 });

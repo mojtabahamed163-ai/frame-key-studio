@@ -210,6 +210,42 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, outp
   ctx.restore();
 }
 
+export function drawExportFrame(
+  context: CanvasRenderingContext2D,
+  sample: VideoSample,
+  localTime: number,
+  ranges: SpeechRange[],
+  clip: ClipSuggestion,
+  cues: CaptionCue[],
+  faceKeyframes: FaceKeyframe[],
+  settings: StudioProject["settings"],
+  logo: ImageBitmap | null,
+): number | null {
+  const outputTime = mapSourceTimeToOutput(localTime, ranges);
+  if (outputTime == null) return null;
+  const width = context.canvas.width;
+  const height = context.canvas.height;
+  context.clearRect(0, 0, width, height);
+  if (settings.framingMode === "full") {
+    context.fillStyle = "#17261f";
+    context.fillRect(0, 0, width, height);
+    sample.drawWithFit(context, { fit: "contain" });
+  } else {
+    const center = settings.smartFraming
+      ? faceCenterAt(faceKeyframes, localTime, settings.manualCropX, settings.manualCropY)
+      : { x: settings.manualCropX, y: settings.manualCropY };
+    const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
+    sample.drawWithFit(context, { fit: "cover", crop });
+  }
+  if (settings.showCaptions) {
+    const cue = cues.find((item) => outputTime >= item.start && outputTime <= item.end);
+    drawCaption(context, cue, outputTime, height, settings);
+  }
+  drawTitleCard(context, clip, outputTime, settings);
+  drawLogo(context, logo, settings.logoPosition, width, height);
+  return outputTime;
+}
+
 function drawLogo(ctx: CanvasRenderingContext2D, logo: ImageBitmap | null, position: StudioProject["settings"]["logoPosition"], width: number, height: number): void {
   if (!logo) return;
   const targetWidth = Math.min(width * 0.2, 190);
@@ -333,27 +369,8 @@ export async function exportClip(options: {
           if (signal.aborted) return null;
           if (firstVideoTime == null) firstVideoTime = sample.timestamp;
           const localTime = Math.max(0, sample.timestamp - firstVideoTime);
-          const mappedTime = mapSourceTimeToOutput(localTime, ranges);
+          const mappedTime = drawExportFrame(context, sample, localTime, ranges, clip, cues, faceKeyframes, project.settings, logo);
           if (mappedTime == null) return null;
-          const center = project.settings.smartFraming
-            ? faceCenterAt(faceKeyframes, localTime, project.settings.manualCropX, project.settings.manualCropY)
-            : { x: project.settings.manualCropX, y: project.settings.manualCropY };
-          context.clearRect(0, 0, width, height);
-          if (project.settings.framingMode === "full") {
-            context.fillStyle = "#17261f";
-            context.fillRect(0, 0, width, height);
-            sample.drawWithFit(context, { fit: "contain" });
-          } else {
-            const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
-            sample.drawWithFit(context, { fit: "cover", crop });
-          }
-          const sourceTime = clip.start + localTime;
-          if (project.settings.showCaptions) {
-            const cue = cues.find((item) => mappedTime >= item.start && mappedTime <= item.end);
-            drawCaption(context, cue, mappedTime, height, project.settings);
-          }
-          drawTitleCard(context, clip, mappedTime, project.settings);
-          drawLogo(context, logo, project.settings.logoPosition, width, height);
           const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
           return frame;
         },
