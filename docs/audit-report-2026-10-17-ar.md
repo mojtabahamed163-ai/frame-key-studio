@@ -255,3 +255,8 @@ pnpm test -- --run
 تغيّرت `TODO.md`، `client/src/pages/Studio.tsx`، `client/src/features/studio/async-guards.ts` واختباره، `client/src/features/studio/analysis/caption-edits.ts` واختباره، `subtitles.ts` واختباره، `clip-analysis.test.ts`، `convert-clip.ts` واختباره، و`export/download.ts`. تم تحديث هذا التقرير بإلحاق القسم دون محو التاريخ السابق.
 
 الحالة في وقت كتابة هذا الملحق: لم يُنشأ commit نهائي لهذه الجولة ولم يُجرَ push بعد. لا deploy ولا merge ولا force-push.
+
+
+### حالة Git بعد التحقق النهائي
+
+رُفع commit الكود `c00d8e8deaaa3b621acde31da932c52a0d6ea1c0` إلى `audit/real-world-repair-2026-10-17` بدفع عادي fast-forward. تطابق `git ls-remote origin refs/heads/audit/real-world-repair-2026-10-17` مع `HEAD` بعد الرفع، وكانت شجرة العمل نظيفة. لم يُعدّل `main`، ولم يحدث merge أو deploy أو force-push، ولم تُرفع ملفات الوسائط.

@@ -192,4 +192,4 @@
 - [ ] «إن توفرت العينة `/home/ubuntu/frame-key-real-tests/kyle-yip-interview-first-60s.webm`، اختبر استخراج Whisper المحلي مع تسجيل التحذيرات دون ادعاء تحسن عن baseline، واقتراح المقاطع والتتبع والفجوات دون نسبة نتيجة سابقة غير معادة.»
 - [ ] «فعّل silence removal وtitle card وcaption export، أعد حفظ WebM باسم مختلف، وافحص الفيديو والصوت بـ`ffprobe` وFFmpeg؛ واختبر ZIP لمقطعين بالعنوان نفسه وعدد الملفات بعد فك الضغط.»
 - [x] «شغّل بعد التغييرات `pnpm test -- --run` و`pnpm check` و`pnpm build` و`git diff --check`، ثم حدّث التقرير العربي مع إبقاء السجل السابق.»
-- [ ] «أنشئ commit واضحًا على `audit/real-world-repair-2026-10-17` وارفع إلى الفرع نفسه فقط وتحقق بـ`git ls-remote`؛ لا تعدّل `main`، لا تدمج، لا تنشر، لا تستخدم force-push، ولا ترفع عينات أو صادرات.»
+- [x] «أنشئ commit واضحًا على `audit/real-world-repair-2026-10-17` وارفع إلى الفرع نفسه فقط وتحقق بـ`git ls-remote`؛ لا تعدّل `main`، لا تدمج، لا تنشر، لا تستخدم force-push، ولا ترفع عينات أو صادرات.»
