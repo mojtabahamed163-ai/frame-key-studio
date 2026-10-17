@@ -322,8 +322,14 @@ export function buildClipSpeechRanges(words: TranscriptWord[], start: number, en
 
 export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): number | null {
   let outputCursor = 0;
-  for (const range of ranges) {
-    if (time >= range.start && time <= range.end) return outputCursor + (time - range.start);
+  for (let index = 0; index < ranges.length; index += 1) {
+    const range = ranges[index];
+    const isLastRange = index === ranges.length - 1;
+    // Internal range ends are exclusive. Otherwise a sample exactly at the
+    // end of one kept range and one at the next range start share a timestamp.
+    if (time >= range.start && (time < range.end || (isLastRange && time <= range.end))) {
+      return outputCursor + (time - range.start);
+    }
     if (time < range.start) return null;
     outputCursor += range.end - range.start;
   }

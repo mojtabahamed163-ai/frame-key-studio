@@ -141,6 +141,12 @@ describe("local transcript analysis", () => {
     expect(mapSourceTimeToOutput(6, ranges)).toBeNull();
     expect(mapSourceTimeToOutput(9, ranges)).toBe(4);
   });
+  it("does not map an internal range end and the next range start to the same output time", () => {
+    const ranges = [{ start: 0, end: 2 }, { start: 5, end: 7 }];
+    expect(mapSourceTimeToOutput(2, ranges)).toBeNull();
+    expect(mapSourceTimeToOutput(5, ranges)).toBe(2);
+    expect(mapSourceTimeToOutput(7, ranges)).toBe(4);
+  });
   it("compresses external subtitle timestamps with the same speech ranges as the rendered video", () => {
     const cue = { id: "cue", start: 10.5, end: 15.5, text: "A line across a removed pause.", words: [] };
     const mapped = mapCaptionCuesToOutput([cue], 10, 16, [{ start: 0, end: 1.5 }, { start: 4, end: 6 }]);
