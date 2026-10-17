@@ -38,7 +38,7 @@ export function inferMissingWordEnds(words: RawWord[], windowEnd: number): { wor
   const normalized = words.map((word, index) => {
     if (word.start == null || word.end != null || !Number.isFinite(word.start)) return word;
     const nextStart = words.slice(index + 1).find((next) => next.start != null && Number.isFinite(next.start) && next.start > word.start!)?.start;
-    const candidateEnd = nextStart ?? windowEnd;
+    const candidateEnd = Math.min(nextStart ?? windowEnd, windowEnd);
     if (!Number.isFinite(candidateEnd) || candidateEnd <= word.start) return word;
     inferred = true;
     return { ...word, end: candidateEnd };

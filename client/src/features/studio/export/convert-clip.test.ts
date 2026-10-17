@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { cropForPortrait, exportClip, portraitCropQuality, requestSaveTarget, titleCardGeometry, videoBitrateForHeight } from "./convert-clip";
+import { uniqueFilename } from "./download";
 import type { ClipSuggestion, StudioProject } from "../types";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
     expect(videoBitrateForHeight(1280)).toBe(6_000_000);
     expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+  });
+});
+
+describe("batch filenames", () => {
+  it("makes repeated names unique", () => {
+    const used = new Set<string>();
+    expect(uniqueFilename("same.webm", used)).toBe("same.webm");
+    expect(uniqueFilename("same.webm", used)).toBe("same-2.webm");
+    expect(uniqueFilename("same.webm", used)).toBe("same-3.webm");
   });
 });
 

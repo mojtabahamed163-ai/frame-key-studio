@@ -49,6 +49,8 @@ export function VideoPreview({
     return () => URL.revokeObjectURL(url);
   }, [settings.logo]);
 
+  const framingLabel = settings.framingMode === "full" ? "FULL FRAME" : center.x < 0.48 ? "FRAME LEFT" : center.x > 0.52 ? "FRAME RIGHT" : "CENTER FRAME";
+
   return (
     <div className="studio-preview-wrap">
       <div className="studio-preview-topline"><span><span className="studio-live-dot" /> LOCAL PREVIEW</span><span>9:16 / PORTRAIT</span></div>
@@ -77,7 +79,7 @@ export function VideoPreview({
         {!clip && <div className="studio-preview-empty"><span><Play size={20} fill="currentColor" /></span><p>Choose a suggested moment<br />to preview your cut.</p></div>}
         {clip && <div className="studio-preview-clip-label"><span>F&amp;K / CUT</span><strong>{clip.selectedTitle || clip.titleOptions[0] || "Manual clip"}</strong></div>}
       </div>
-      <div className="studio-preview-footer"><span>{clip ? `${formatTime(clip.start)} — ${formatTime(clip.end)}` : "Waiting for a clip"}</span><span>{center.x < 0.48 ? "FRAME LEFT" : center.x > 0.52 ? "FRAME RIGHT" : "CENTER FRAME"}</span></div>
+      <div className="studio-preview-footer"><span>{clip ? `${formatTime(clip.start)} — ${formatTime(clip.end)}` : "Waiting for a clip"}</span><span>{framingLabel}</span></div>
     </div>
   );
 }

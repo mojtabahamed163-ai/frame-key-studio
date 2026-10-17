@@ -10,7 +10,7 @@ import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
 import { buildCaptionCues, buildClipSpeechRanges, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
-import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
+import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
@@ -94,6 +94,8 @@ export default function Studio() {
   const faceController = useRef<AbortController | null>(null);
   const exportController = useRef<AbortController | null>(null);
   const translationController = useRef<AbortController | null>(null);
+  const sourceGeneration = useRef(0);
+  const projectRevision = useRef(0);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const [step, setStep] = useState<StepId>("upload");
@@ -141,6 +143,7 @@ export default function Studio() {
   const estimatedZipBytes = project ? estimateOutputBytes(project.clips.filter((clip) => selectedForBatch.includes(clip.id)), settings) : 0;
   const portraitQuality = project ? portraitCropQuality(project.width, project.height, settings.outputHeight) : null;
   const hasSavePicker = typeof getPickerWindow().showSaveFilePicker === "function";
+  const isBusy = isAnalyzing || isTranslating || isTrackingFace || isExporting;
 
   useEffect(() => {
     document.title = "Local Video Studio — Frame & Key";
@@ -167,14 +170,17 @@ export default function Studio() {
       void saveProject(project).then(async () => {
         setSaveState("saved");
         setSavedProjects(await listProjects());
-      }).catch(() => setSaveState("error"));
+      }).catch(() => {
+        setSaveState("error");
+        setError("Local save failed. Keep this tab open and make another edit to retry saving your project.");
+      });
     }, 350);
     return () => window.clearTimeout(timer);
   }, [project, localStorageReady]);
 
   useEffect(() => {
     if (!localStorageReady) return;
-    const timer = window.setTimeout(() => { void saveSettings(settings).catch(() => setSaveState("error")); }, 250);
+    const timer = window.setTimeout(() => { void saveSettings(settings).catch(() => { setSaveState("error"); setError("Local settings save failed. Your current settings remain active in this tab."); }); }, 250);
     return () => window.clearTimeout(timer);
   }, [settings, localStorageReady]);
 
@@ -206,6 +212,7 @@ export default function Studio() {
   }, [saveState]);
 
   function commitProject(next: StudioProject) {
+    projectRevision.current += 1;
     setProject({ ...next, updatedAt: Date.now() });
   }
 
@@ -259,11 +266,17 @@ export default function Studio() {
       invalidateClipOutputs();
       setPendingProject(null);
     } catch (cause) {
+      if (saved.sourceSavedInOpfs) setPendingProject(saved);
       setError(cause instanceof Error ? cause.message : "Could not reopen this source file.");
     }
   }
 
   async function acceptFile(file: File) {
+    if (isBusy) { setError("Finish or cancel the current operation before choosing another source."); return; }
+    sourceGeneration.current += 1;
+    analysisController.current?.abort();
+    faceController.current?.abort();
+    translationController.current?.abort();
     setError("");
     setNotice("");
     if (pendingProject) {
@@ -276,7 +289,6 @@ export default function Studio() {
         return;
       }
       const saved = pendingProject;
-      setPendingProject(null);
       await activateSavedProject(saved, file);
       return;
     }
@@ -321,6 +333,11 @@ export default function Studio() {
   }
 
   async function openSavedProject(saved: StudioProject) {
+    if (isBusy) { setError("Finish or cancel the current operation before opening a saved project."); return; }
+    sourceGeneration.current += 1;
+    analysisController.current?.abort();
+    faceController.current?.abort();
+    translationController.current?.abort();
     setError("");
     const localFile = saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null;
     if (localFile) {
@@ -333,11 +350,15 @@ export default function Studio() {
 
   async function removeSavedProject(saved: StudioProject) {
     if (!window.confirm(`Delete the local project “${saved.name}” from this browser?`)) return;
-    await deleteProject(saved);
-    setSavedProjects(await listProjects());
-    if (project?.id === saved.id) {
-      invalidateClipOutputs();
-      setProject(null); setSourceFile(null); setMetadata(null); setStep("upload"); setSelectedForBatch([]); setRenderStatuses({});
+    try {
+      await deleteProject(saved);
+      setSavedProjects(await listProjects());
+      if (project?.id === saved.id) {
+        invalidateClipOutputs();
+        setProject(null); setSourceFile(null); setMetadata(null); setStep("upload"); setSelectedForBatch([]); setRenderStatuses({});
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? `Could not delete the saved project: ${cause.message}` : "Could not delete the saved project. Try again.");
     }
   }
 
@@ -366,10 +387,15 @@ export default function Studio() {
     setAnalysisProgress({ stage: "metadata", progress: 0, detail: "Starting local analysis" });
     const controller = new AbortController();
     analysisController.current = controller;
+    const generation = sourceGeneration.current;
+    const revision = projectRevision.current;
+    const projectId = project.id;
+    const analyzedFile = sourceFile;
     try {
       const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
       const words = transcription.words;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
+      if (sourceGeneration.current !== generation || projectRevision.current !== revision || projectId !== project.id || sourceFile !== analyzedFile) return;
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
         ...project,
@@ -507,17 +533,20 @@ export default function Studio() {
     const nextCues = all.map((item) => {
       if (item.id !== cue.id) return item;
       const next = { ...item, ...patch };
-      next.start = Math.max(activeClip.start, Math.min(next.start, activeClip.end - 0.05));
-      next.end = Math.max(next.start + 0.05, Math.min(next.end, activeClip.end));
+      if (patch.start !== undefined || patch.end !== undefined) {
+        next.start = Math.max(activeClip.start, Math.min(next.start, activeClip.end - 0.05));
+        next.end = Math.max(next.start + 0.05, Math.min(next.end, activeClip.end));
+      }
       if (patch.text !== undefined) next.words = [];
       else if (patch.start !== undefined || patch.end !== undefined) {
         const oldStart = item.start;
         const oldEnd = item.end;
-        next.words = item.words.map((word) => ({
-          ...word,
-          start: patch.start !== undefined ? Math.max(next.start, word.start + next.start - oldStart) : word.start,
-          end: patch.end !== undefined ? Math.min(next.end, word.end + next.end - oldEnd) : word.end,
-        }));
+        const delta = patch.start !== undefined ? next.start - oldStart : next.end - oldEnd;
+        next.words = item.words.flatMap((word) => {
+          const start = Math.max(next.start, word.start + delta);
+          const end = Math.min(next.end, word.end + delta);
+          return end - start >= 0.04 ? [{ ...word, start, end }] : [];
+        });
       }
       return next;
     });
@@ -581,9 +610,14 @@ export default function Studio() {
     setIsTranslating(true);
     const controller = new AbortController();
     translationController.current = controller;
+    const revision = projectRevision.current;
+    const projectId = project.id;
+    const clipId = activeClip.id;
+    const targetLanguage = settings.targetLanguage;
     try {
       const inClip = sourceCues(project).filter((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end);
       const translated = await translateCues(inClip, settings.targetLanguage, setTranslationProgress, controller.signal);
+      if (projectRevision.current !== revision || project.id !== projectId || project.selectedClipId !== clipId || settings.targetLanguage !== targetLanguage) return;
       invalidateClipOutputs([activeClip.id]);
       const keep = project.translatedCues.filter((cue) => !inClip.some((source) => cue.id === `translated-${settings.targetLanguage}-${source.id}`));
       commitProject({ ...project, translatedCues: [...keep, ...translated].sort((a, b) => a.start - b.start), translatedLanguage: settings.targetLanguage });
@@ -602,8 +636,15 @@ export default function Studio() {
     setIsTrackingFace(true);
     const controller = new AbortController();
     faceController.current = controller;
+    const generation = sourceGeneration.current;
+    const revision = projectRevision.current;
+    const projectId = project.id;
+    const clipId = activeClip.id;
+    const trackedStart = activeClip.start;
+    const trackedEnd = activeClip.end;
     try {
       const keyframes = await trackLargestFace(sourceFile, activeClip.start, activeClip.end, controller.signal, setFaceProgress, { x: settings.manualCropX, y: settings.manualCropY });
+      if (sourceGeneration.current !== generation || projectRevision.current !== revision || project.id !== projectId || project.selectedClipId !== clipId || activeClip.start !== trackedStart || activeClip.end !== trackedEnd) return;
       const summary = summarizeFaceTrack(keyframes, activeClip.end - activeClip.start);
       invalidateClipOutputs([activeClip.id]);
       commitProject({
@@ -708,6 +749,7 @@ export default function Studio() {
     const controller = new AbortController();
     exportController.current = controller;
     const batchResults: SavedOutput[] = [];
+    const usedFilenames = new Set<string>();
     let currentClipId: string | null = null;
     try {
       for (let index = 0; index < clips.length; index += 1) {
@@ -716,7 +758,7 @@ export default function Studio() {
         setRenderStatuses((current) => ({ ...current, [clip.id]: "rendering" }));
         const extension = outputFormat === "mp4" ? "mp4" : "webm";
         const platformTag = settings.outputPlatform === "generic" ? "" : `${settings.outputPlatform}-`;
-        const outputName = `${platformTag}${safeFileStem(clipTitle(clip, index))}.${extension}`;
+        const outputName = uniqueFilename(`${platformTag}${safeFileStem(clipTitle(clip, index))}.${extension}`, usedFilenames);
         const converted = await exportClip({
           file: sourceFile, project, clip,
           cues: exportCuesForClip(clip),
@@ -801,7 +843,7 @@ export default function Studio() {
     await saveSourceLocally();
   }
 
-  const fileButton = <button type="button" className="studio-button studio-button--secondary" onClick={() => fileInputRef.current?.click()}><Upload size={16} />{pendingProject ? "Choose the original source" : "Choose a video"}</button>;
+  const fileButton = <button type="button" className="studio-button studio-button--secondary" onClick={() => fileInputRef.current?.click()} disabled={isBusy}><Upload size={16} />{pendingProject ? "Choose the original source" : "Choose a video"}</button>;
   const cueLanguage = settings.targetLanguage !== "none" && project?.translatedLanguage === settings.targetLanguage ? settings.targetLanguage.toUpperCase() : "SOURCE";
 
   return (
@@ -863,8 +905,8 @@ export default function Studio() {
             <aside className="studio-saved-panel">
               <div className="studio-saved-panel__heading"><span><FolderOpen size={17} /></span><div><p>THIS BROWSER</p><h3>Saved projects</h3></div></div>
               {!savedProjects.length ? <p className="studio-empty-inline">Your local edit notes will appear here.</p> : <ul className="saved-project-list">{savedProjects.slice(0, 8).map((saved) => <li key={saved.id}>
-                <button type="button" className="saved-project-open" onClick={() => void openSavedProject(saved)}><span><strong>{saved.name}</strong><small>{formatTime(saved.duration)} · {prettyDate(saved.updatedAt)}</small></span><ArrowRight size={15} /></button>
-                <button type="button" className="saved-project-delete" onClick={() => void removeSavedProject(saved)} aria-label={`Delete ${saved.name} from this browser`}><X size={14} /></button>
+                <button type="button" className="saved-project-open" onClick={() => void openSavedProject(saved)} disabled={isBusy}><span><strong>{saved.name}</strong><small>{formatTime(saved.duration)} · {prettyDate(saved.updatedAt)}</small></span><ArrowRight size={15} /></button>
+                <button type="button" className="saved-project-delete" onClick={() => void removeSavedProject(saved)} disabled={isBusy} aria-label={`Delete ${saved.name} from this browser`}><X size={14} /></button>
               </li>)}</ul>}
               {pendingProject && <div className="saved-project-reselect"><p>Source not stored. Select the original video matching <strong>{pendingProject.sourceFileName}</strong> ({formatBytes(pendingProject.sourceSize)}).</p>{fileButton}</div>}
               <div className="studio-local-footnote"><HardDrive size={14} /><span>Projects, settings and transcripts are stored in this browser’s local database. Clear browser storage and project notes may be removed.</span></div>
@@ -894,8 +936,8 @@ export default function Studio() {
               {activeClip ? <VideoPreview src={previewUrl} clip={activeClip} cues={currentCues} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} /> : <div className="studio-empty-state"><Scissors size={22} /><p>Select a suggestion or create a manual clip.</p><button type="button" className="studio-button studio-button--secondary" onClick={addManualClip}><Plus size={15} />Add manual clip</button></div>}
               {activeClip && <div className="studio-cut-controls">
                 <div className="studio-cut-controls__heading"><span className="studio-mini-label">IN / OUT POINTS</span><button type="button" className="studio-text-button" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = activeClip.start; setCurrentTime(activeClip.start); void videoRef.current.play().catch(() => undefined); } }}><PlayIcon />Play this range</button></div>
-                <div className="studio-time-row"><label>Start <span>seconds</span><input type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={activeClip.start.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={activeClip.end.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
-                <div className="studio-cut-range"><input aria-label="Adjust clip start" type="range" min="0" max={Math.max(0, activeClip.end - 0.5)} step="0.1" value={activeClip.start} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /><input aria-label="Adjust clip end" type="range" min={activeClip.start + 0.5} max={project.duration} step="0.1" value={activeClip.end} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></div>
+                <div className="studio-time-row"><label>Start <span>seconds</span><input disabled={isTrackingFace} type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={activeClip.start.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input disabled={isTrackingFace} type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={activeClip.end.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
+                <div className="studio-cut-range"><input disabled={isTrackingFace} aria-label="Adjust clip start" type="range" min="0" max={Math.max(0, activeClip.end - 0.5)} step="0.1" value={activeClip.start} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /><input disabled={isTrackingFace} aria-label="Adjust clip end" type="range" min={activeClip.start + 0.5} max={project.duration} step="0.1" value={activeClip.end} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></div>
               </div>}
               {activeClip && <section className="studio-panel studio-captions-panel">
                 <div className="studio-panel-heading"><span className="studio-panel-heading__index">04</span><div><p>CAPTIONS / {cueLanguage}</p><h3>Words, in time.</h3></div><button type="button" className="studio-text-button" onClick={() => captionInputRef.current?.click()}><FileDown size={14} />Import SRT/VTT</button></div>

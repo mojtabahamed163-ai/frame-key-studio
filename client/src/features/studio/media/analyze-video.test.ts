@@ -26,6 +26,15 @@ describe("local Whisper audio-window boundaries", () => {
     expect(wordBelongsToChunkWindow(-1, 0, 0, 0)).toBe(false);
   });
 
+  it("bounds an inferred word end before a later out-of-window word", () => {
+    const inferred = inferMissingWordEnds([
+      { text: "valid", start: 8.4, end: null },
+      { text: "hallucinated", start: 9.5, end: 9.8 },
+    ], 9.2);
+    expect(inferred.words[0].end).toBe(9.2);
+    expect(fitWordToAudioWindow(8.4, inferred.words[0].end!, 8, 9.2)).toEqual({ start: 8.4, end: 9.2 });
+  });
+
   it("clamps only a small boundary-rounding drift and rejects a hallucinated overrun", () => {
     expect(fitWordToAudioWindow(4.96, 5.25, 5, 10)).toEqual({ start: 5, end: 5.25 });
     expect(fitWordToAudioWindow(9.7, 10.08, 5, 10)).toEqual({ start: 9.7, end: 10 });

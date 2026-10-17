@@ -172,9 +172,9 @@ export function titleCardGeometry(width: number, height: number, visibleLineCoun
   };
 }
 
-function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, absoluteTime: number, settings: StudioProject["settings"]): void {
+function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, outputTime: number, settings: StudioProject["settings"]): void {
   const title = (clip.selectedTitle || clip.titleOptions[0] || "").trim();
-  if (!settings.showTitleCard || !title || absoluteTime < clip.start || absoluteTime >= clip.start + 2.8) return;
+  if (!settings.showTitleCard || !title || outputTime < 0 || outputTime >= 2.8) return;
   const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor) ? settings.primaryColor : "#203A31";
   const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor) ? settings.accentColor : "#C9794B";
   ctx.save();
@@ -287,11 +287,6 @@ export async function exportClip(options: {
   canvas.height = height;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new Error("Canvas encoding is unavailable in this browser.");
-  const fullVideoCanvas = document.createElement("canvas");
-  fullVideoCanvas.width = width;
-  fullVideoCanvas.height = Math.max(1, Math.min(height, Math.round(width * project.height / Math.max(1, project.width))));
-  const fullVideoContext = fullVideoCanvas.getContext("2d", { alpha: false });
-  if (!fullVideoContext) throw new Error("Full-video canvas is unavailable in this browser.");
   let firstVideoTime: number | null = null;
   let firstAudioTime: number | null = null;
   let bytesWritten = 0;
@@ -347,11 +342,7 @@ export async function exportClip(options: {
           if (project.settings.framingMode === "full") {
             context.fillStyle = "#17261f";
             context.fillRect(0, 0, width, height);
-            fullVideoContext.clearRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
-            fullVideoContext.fillStyle = "#17261f";
-            fullVideoContext.fillRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
-            sample.drawWithFit(fullVideoContext, { fit: "fill" });
-            context.drawImage(fullVideoCanvas, 0, (height - fullVideoCanvas.height) / 2, width, fullVideoCanvas.height);
+            sample.drawWithFit(context, { fit: "contain" });
           } else {
             const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
             sample.drawWithFit(context, { fit: "cover", crop });
@@ -361,7 +352,7 @@ export async function exportClip(options: {
             const cue = cues.find((item) => mappedTime >= item.start && mappedTime <= item.end);
             drawCaption(context, cue, mappedTime, height, project.settings);
           }
-          drawTitleCard(context, clip, sourceTime, project.settings);
+          drawTitleCard(context, clip, mappedTime, project.settings);
           drawLogo(context, logo, project.settings.logoPosition, width, height);
           const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
           return frame;
