@@ -115,6 +115,34 @@ test("keeps the saved project shell after a reload when the source was not store
   await expect(page.getByRole("button", { name: "Choose the original source" }).first()).toBeVisible();
 });
 
+test("cancels local speech analysis without losing the selected source", async ({ page }) => {
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixture("valid-horizontal.mp4"));
+  await expect(page.getByText("valid-horizontal.mp4", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Analyze speech on this device" }).click();
+  const stop = page.getByRole("button", { name: "Stop analysis" });
+  await expect(stop).toBeVisible({ timeout: 15_000 });
+  await stop.click();
+  await expect(page.getByRole("status")).toContainText(/Speech analysis cancelled/);
+  await expect(page.getByText("valid-horizontal.mp4", { exact: true })).toBeVisible();
+});
+
+test("cancels local face tracking while preserving manual framing", async ({ page }) => {
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixture("valid-horizontal.mp4"));
+  await expect(page.getByText("valid-horizontal.mp4", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /Skip analysis and set a cut manually/i }).click();
+  await expect(page.getByText("Shape the final cut.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Find face" }).click();
+  const stop = page.getByRole("button", { name: "Stop face scan" });
+  await expect(stop).toBeVisible({ timeout: 15_000 });
+  await stop.click();
+  await expect(page.getByRole("status")).toContainText(/Face tracking cancelled/);
+  await expect(page.getByLabel("Manual horizontal framing")).toBeVisible();
+});
+
 test.describe("mobile viewport", () => {
   test.use({ isMobile: true, viewport: { width: 390, height: 844 } });
 
