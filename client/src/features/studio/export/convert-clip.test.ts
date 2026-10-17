@@ -14,6 +14,7 @@ import {
   requestSaveTarget,
   supportedOutputFormat,
   titleCardGeometry,
+  verifyExportBlob,
   videoBitrateForHeight,
 } from "./convert-clip";
 import { createZip, uniqueFilename } from "./download";
@@ -26,6 +27,10 @@ describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
     expect(videoBitrateForHeight(1280)).toBe(6_000_000);
     expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+  });
+
+  it("rejects an empty export artifact before it is shown as ready", async () => {
+    await expect(verifyExportBlob(new Blob())).rejects.toThrow(/empty file/i);
   });
 
   it("allows silent-video export when VideoEncoder exists but AudioEncoder does not", async () => {

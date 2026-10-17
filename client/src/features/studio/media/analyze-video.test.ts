@@ -8,9 +8,14 @@ import {
   inferMissingWordEnds,
   isDuplicateOverlapWord,
   resampleAudioForWhisper,
+  MAX_SOURCE_DIMENSION_PX,
+  MAX_SOURCE_DURATION_SECONDS,
+  MAX_SOURCE_FILE_BYTES,
   TRANSCRIPTION_CHUNK_SECONDS,
   TRANSCRIPTION_OVERLAP_SECONDS,
   timestampWindowWarningCodes,
+  validateVideoFileSelection,
+  validateVideoMetadata,
   wordBelongsToChunkWindow,
 } from "./analyze-video";
 import type { TranscriptWord } from "../types";
@@ -122,5 +127,44 @@ describe("local Whisper audio-window boundaries", () => {
       { text: "final", start: 8.4, end: 8.9 },
       { text: "phrase", start: 8.9, end: 9.2 },
     ]);
+  });
+});
+
+describe("supported source scope", () => {
+  const file = (overrides: Partial<{ name: string; size: number; type: string }> = {}) => ({
+    name: "recording.mp4",
+    size: 1024,
+    type: "video/mp4",
+    ...overrides,
+  });
+
+  it("rejects empty, non-video, and oversized source files before decoding", () => {
+    expect(() => validateVideoFileSelection(file({ size: 0 }))).toThrow(/non-empty/i);
+    expect(() => validateVideoFileSelection(file({ name: "notes.txt", type: "text/plain" }))).toThrow(/supported video/i);
+    expect(() => validateVideoFileSelection(file({ size: MAX_SOURCE_FILE_BYTES + 1 }))).toThrow(/1 GB/i);
+  });
+
+  it("rejects sources outside the supported duration and 1080p scope", () => {
+    expect(() => validateVideoMetadata(file(), {
+      duration: MAX_SOURCE_DURATION_SECONDS + 1,
+      width: 1920,
+      height: 1080,
+      hasAudio: true,
+    })).toThrow(/30-minute/i);
+    expect(() => validateVideoMetadata(file(), {
+      duration: 10,
+      width: MAX_SOURCE_DIMENSION_PX + 1,
+      height: 1080,
+      hasAudio: true,
+    })).toThrow(/1080p/i);
+  });
+
+  it("allows a supported silent portrait source", () => {
+    expect(() => validateVideoMetadata(file(), {
+      duration: 12,
+      width: 1080,
+      height: 1920,
+      hasAudio: false,
+    })).not.toThrow();
   });
 });

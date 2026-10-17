@@ -13,7 +13,7 @@ import { buildCaptionCues, buildClipSpeechRanges, EXPORT_FRAME_RATE, joinTranscr
 import { createSerializedAsyncQueue, isCurrentFaceTrack, isCurrentProjectSnapshot, isCurrentSourceOperation, isCurrentTranslation, isOperationOwner, markSourceSavedIfMatchingProject, matchesReselectedSource, recoveryProjectAfterOpenFailure, shouldClearPendingProject } from "@/features/studio/async-guards";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
-import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
+import { inspectVideo, MAX_SOURCE_DIMENSION_PX, MAX_SOURCE_DURATION_SECONDS, MAX_SOURCE_FILE_BYTES, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
@@ -31,6 +31,7 @@ const LARGE_FILE_WARNING_BYTES = 750 * 1024 * 1024;
 
 interface SavedOutput { result: ExportResult; clipId: string; clipLabel: string }
 type ClipRenderStatus = "queued" | "rendering" | "ready" | "failed" | "cancelled";
+type RetryAction = "analysis" | "translation" | "face" | "export-one" | "export-batch";
 
 function formatTime(seconds: number): string {
   const value = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
@@ -130,6 +131,7 @@ export default function Studio() {
   const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [retryAction, setRetryAction] = useState<RetryAction | null>(null);
   const [localStorageReady, setLocalStorageReady] = useState(false);
   const [dragging, setDragging] = useState(false);
 
@@ -341,10 +343,6 @@ export default function Studio() {
         await activateSavedProject(pendingProject, file, generation, revision);
         return;
       }
-      if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(file.name)) {
-        setError("Choose a supported video file such as MP4, MOV, WebM, or M4V.");
-        return;
-      }
       const info = await inspectVideo(file);
       if (sourceGeneration.current !== generation) return;
       if (projectRevision.current !== revision) {
@@ -394,6 +392,46 @@ export default function Studio() {
     const file = event.target.files?.[0];
     event.currentTarget.value = "";
     if (file) void acceptFile(file);
+  }
+
+  async function removeSource() {
+    if (isBusy) {
+      setError("Finish or cancel the current operation before removing the source.");
+      return;
+    }
+    const currentProject = project;
+    const revision = projectRevision.current;
+    setIsProjectTransitioning(true);
+    setError("");
+    try {
+      if (currentProject) {
+        const saved = await queueProjectSnapshotSave(currentProject, revision, true);
+        if (!saved) throw new Error("The current project could not be saved before the source was removed.");
+      }
+      sourceGeneration.current += 1;
+      projectRevision.current += 1;
+      analysisController.current?.abort();
+      faceController.current?.abort();
+      translationController.current?.abort();
+      exportController.current?.abort();
+      invalidateClipOutputs();
+      activeProjectIdRef.current = null;
+      setProject(null);
+      setSourceFile(null);
+      setMetadata(null);
+      setPendingProject(null);
+      setStep("upload");
+      setCurrentTime(0);
+      setSelectedForBatch([]);
+      setRenderStatuses({});
+      setClipProgress({});
+      setRenderErrors({});
+      setNotice(currentProject ? "Source removed from this tab. The saved project remains available in this browser." : "Source removed. Choose another local video when you are ready.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The source was not removed because the project could not be saved.");
+    } finally {
+      setIsProjectTransitioning(false);
+    }
   }
 
   async function openSavedProject(saved: StudioProject) {
@@ -491,8 +529,10 @@ export default function Studio() {
 
   async function runTranscription() {
     if (!sourceFile || !project) return;
+    if (isBusy) { setError("Finish or cancel the current operation before starting speech analysis."); return; }
     setError("");
     setNotice("");
+    setRetryAction(null);
     setIsAnalyzing(true);
     setAnalysisProgress({ stage: "metadata", progress: 0, detail: "Starting local analysis" });
     const controller = new AbortController();
@@ -534,8 +574,13 @@ export default function Studio() {
       const warningNotice = transcription.warnings.length ? " Whisper also flagged timestamp, overlap, or end-of-audio activity for review." : "";
       setNotice(suggestions.length ? `Analysis complete. ${suggestions.length} distinct candidate clip${suggestions.length === 1 ? " was" : "s were"} selected from the timed transcript.${reviewCount ? ` ${reviewCount} require${reviewCount === 1 ? "s" : ""} transcript review before publishing.` : ""}${warningNotice}` : `The words were transcribed, but no short self-contained segments were found. Add a manual clip or adjust the source language and retry.${warningNotice}`);
       if (suggestions.length) setStep("select");
+      setRetryAction(null);
     } catch (cause) {
-      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
+      if (isCurrent()) {
+        setRetryAction("analysis");
+        if (cause instanceof DOMException && cause.name === "AbortError") setNotice("Speech analysis cancelled. Your source and current edits are unchanged; you can try again.");
+        else setError(cause instanceof Error ? cause.message : "Local analysis failed.");
+      }
     } finally {
       if (isOperationOwner(controller, analysisController.current)) {
         setIsAnalyzing(false);
@@ -545,6 +590,17 @@ export default function Studio() {
   }
 
   function cancelAnalysis() { analysisController.current?.abort(); }
+
+  function retryLastOperation() {
+    const action = retryAction;
+    setRetryAction(null);
+    setError("");
+    if (action === "analysis") void runTranscription();
+    else if (action === "translation") void runTranslation();
+    else if (action === "face") void runFaceTracking();
+    else if (action === "export-one") void exportOne();
+    else if (action === "export-batch") void exportBatch();
+  }
 
   function addManualClip() {
     if (!project) return;
@@ -699,6 +755,7 @@ export default function Studio() {
 
   async function runTranslation() {
     if (!project || !activeClip || !currentCues.length) return;
+    if (isBusy) { setError("Finish or cancel the current operation before starting translation."); return; }
     if (project.sourceLanguage !== "en") {
       setError("These local translation models accept English source captions only. Set Speech language to English, transcribe again, and review the source captions first.");
       return;
@@ -708,6 +765,7 @@ export default function Studio() {
       return;
     }
     setError("");
+    setRetryAction(null);
     setIsTranslating(true);
     const controller = new AbortController();
     translationController.current = controller;
@@ -731,8 +789,13 @@ export default function Studio() {
       const keep = project.translatedCues.filter((cue) => !inClip.some((source) => cue.id === `translated-${targetLanguage}-${source.id}`));
       commitProject({ ...project, translatedCues: [...keep, ...translated].sort((a, b) => a.start - b.start), translatedLanguage: targetLanguage });
       setNotice(`Translated ${translated.length} caption lines on this device. Word-by-word timing is approximate; review the result before export.`);
+      setRetryAction(null);
     } catch (cause) {
-      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local translation failed.");
+      if (isCurrent()) {
+        setRetryAction("translation");
+        if (cause instanceof DOMException && cause.name === "AbortError") setNotice("Translation cancelled. Your source captions remain available for another attempt.");
+        else setError(cause instanceof Error ? cause.message : "Local translation failed.");
+      }
     } finally {
       if (isOperationOwner(controller, translationController.current)) {
         setIsTranslating(false);
@@ -743,7 +806,9 @@ export default function Studio() {
 
   async function runFaceTracking() {
     if (!project || !sourceFile || !activeClip) return;
+    if (isBusy) { setError("Finish or cancel the current operation before starting face tracking."); return; }
     setError("");
+    setRetryAction(null);
     setIsTrackingFace(true);
     const controller = new AbortController();
     faceController.current = controller;
@@ -777,8 +842,13 @@ export default function Studio() {
       setNotice(summary.detectedCount < summary.sampleCount
         ? `Face detection returned at ${summary.detectedCount}/${summary.sampleCount} sampled times; held ${summary.heldCount} and used manual framing at ${summary.manualCount}. Longest detection gap: ${summary.longestDetectionGapSeconds.toFixed(1)} s. Review the crop—the tracker does not identify who is speaking.`
         : `Face detection returned at all ${summary.sampleCount} sampled times. The tracker does not identify who is speaking; review the crop before export.`);
+      setRetryAction(null);
     } catch (cause) {
-      if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
+      if (isCurrent()) {
+        setRetryAction("face");
+        if (cause instanceof DOMException && cause.name === "AbortError") setNotice("Face tracking cancelled. Manual framing is still available and your last saved framing was kept.");
+        else setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
+      }
     } finally {
       if (isOperationOwner(controller, faceController.current)) {
         setIsTrackingFace(false);
@@ -786,6 +856,8 @@ export default function Studio() {
       }
     }
   }
+
+  function cancelFaceTracking() { faceController.current?.abort(); }
 
   function chooseSubtitleForExport(clip: ClipSuggestion): CaptionCue[] {
     if (!project) return [];
@@ -818,7 +890,9 @@ export default function Studio() {
 
   async function exportOne() {
     if (!project || !sourceFile || !activeClip || !outputFormat) return;
+    if (isBusy) { setError("Finish or cancel the current operation before exporting."); return; }
     setError("");
+    setRetryAction(null);
     setIsExporting(true);
     setExportProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
     setBatchZip(null);
@@ -846,9 +920,11 @@ export default function Studio() {
       setRenderStatuses((current) => ({ ...current, [activeClip.id]: "ready" }));
       setClipProgress((current) => ({ ...current, [activeClip.id]: 1 }));
       setNotice(result.streamed ? "Export saved using the browser’s direct-to-file writer." : "Export is ready. Use the save button below to download it.");
+      setRetryAction(null);
     } catch (cause) {
       const cancelled = controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError");
       const message = cause instanceof Error ? cause.message : "Export failed on this device.";
+      setRetryAction("export-one");
       setRenderStatuses((current) => ({ ...current, [activeClip.id]: cancelled ? "cancelled" : "failed" }));
       if (cancelled) setNotice("Export cancelled. No incomplete file was added to the results.");
       else {
@@ -863,10 +939,12 @@ export default function Studio() {
 
   async function exportBatch() {
     if (!project || !sourceFile || !outputFormat) return;
+    if (isBusy) { setError("Finish or cancel the current operation before exporting a batch."); return; }
     const clips = project.clips.filter((clip) => selectedForBatch.includes(clip.id));
     if (!clips.length) { setError("Select at least one clip for the batch."); return; }
     if (estimatedZipBytes > ZIP_LIMIT) { setError("This ZIP would exceed the safe in-browser memory budget. Choose 720p or export clips one at a time with direct file saving."); return; }
     setError("");
+    setRetryAction(null);
     setIsExporting(true);
     setExportProgress({ progress: 0, phase: `Clip 1 of ${clips.length}: preparing`, detail: "Preparing local video processing" });
     setRenderStatuses(Object.fromEntries(clips.map((clip) => [clip.id, "queued" as const])));
@@ -920,9 +998,11 @@ export default function Studio() {
       } else {
         setNotice(`Finished ${batchResults.length} clips, but the combined files exceed the ZIP memory limit. Save them individually below.`);
       }
+      setRetryAction(null);
     } catch (cause) {
       const cancelled = controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError");
       const failedClip = clips.find((clip) => clip.id === currentClipId);
+      setRetryAction("export-batch");
       setRenderStatuses((current) => {
         const next = { ...current };
         if (currentClipId) next[currentClipId] = cancelled ? "cancelled" : "failed";
@@ -981,7 +1061,7 @@ export default function Studio() {
         <input ref={fileInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.3gp" className="sr-only" onChange={handleFileInput} />
         <input ref={captionInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" className="sr-only" onChange={importCaptions} />
         {(error || notice) && <div className={`studio-alert${error ? " studio-alert--error" : " studio-alert--notice"}`} role={error ? "alert" : "status"}>
-          {error ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{error || notice}</span>{error && <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button>}
+          {error ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{error || notice}</span>{error && retryAction && <button type="button" className="studio-text-button" onClick={retryLastOperation}>Retry</button>}{error && <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button>}
         </div>}
         {project?.transcriptionWarnings?.length ? <div className="studio-inline-warning studio-transcription-warning" role="status">
           <AlertTriangle size={16} /><span>{transcriptionWarningText(project.transcriptionWarnings)}</span>
@@ -1006,7 +1086,7 @@ export default function Studio() {
                 <h3>{sourceFile ? "Source ready to work with." : "Drop a long video here."}</h3>
                 <p>Choose a local video file. The page reads the file in your browser; it is not sent to the website.</p>
                 {fileButton}
-                <small>MP4 · MOV · M4V · WebM · MKV · AVI — actual format support depends on the browser decoder.</small>
+                <small>Primary supported scope: MP4 / H.264 up to {MAX_SOURCE_DIMENSION_PX} px, {Math.round(MAX_SOURCE_DURATION_SECONDS / 60)} minutes, and {formatBytes(MAX_SOURCE_FILE_BYTES)}. Other browser-decodable formats may work, but are not guaranteed.</small>
               </div>
               {sourceFile && project && metadata && <div className="studio-source-summary">
                 <div className="studio-source-summary__file"><span><Film size={17} /></span><div><strong>{sourceFile.name}</strong><small>{formatBytes(sourceFile.size)} · {metadata.width} × {metadata.height} · {metadata.hasAudio ? "audio detected" : "no audio track"}</small></div></div>
@@ -1014,6 +1094,7 @@ export default function Studio() {
                 <div className="studio-source-summary__actions">
                   <button type="button" className="studio-text-button" onClick={saveProjectSourceToggle} disabled={project.sourceSavedInOpfs || isBusy}><HardDrive size={14} />{isSavingSource ? "Saving source locally…" : project.sourceSavedInOpfs ? "Source saved on this device" : "Save source locally (optional)"}</button>
                   <span>{project.sourceSavedInOpfs ? "OPFS" : "Project notes auto-save; source file does not"}</span>
+                  <button type="button" className="studio-text-button" onClick={() => void removeSource()} disabled={isBusy}><X size={14} />Remove source</button>
                 </div>
               </div>}
               {sourceFile && sourceFile.size >= LARGE_FILE_WARNING_BYTES && <p className="studio-inline-warning"><AlertTriangle size={15} />This is a larger local file. Speech analysis is chunked, but browser memory and codec support still depend on the device. Export longer clips one at a time when possible.</p>}
@@ -1022,7 +1103,7 @@ export default function Studio() {
                 <p className="studio-small-copy">Whisper Tiny runs in a worker on this device. First analysis may download about 41 MB of model files plus a 26.9 MB ONNX browser runtime (transfer compression and cache vary). Your video and transcript are not uploaded.</p>
                 <div className="studio-analysis-controls">
                   <label className="studio-field">Speech language<select value={project.sourceLanguage} onChange={(event) => commitProject({ ...project, sourceLanguage: event.target.value })}>{LANGUAGE_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}</select></label>
-                  {!isAnalyzing ? <button type="button" className="studio-button studio-button--dark" onClick={() => void runTranscription()} disabled={!metadata?.hasAudio}><Sparkles size={16} />Analyze speech on this device</button> : <button type="button" className="studio-button studio-button--quiet" onClick={cancelAnalysis}><X size={15} />Stop analysis</button>}
+                  {!isAnalyzing ? <button type="button" className="studio-button studio-button--dark" onClick={() => void runTranscription()} disabled={!metadata?.hasAudio || isBusy}><Sparkles size={16} />Analyze speech on this device</button> : <button type="button" className="studio-button studio-button--quiet" onClick={cancelAnalysis}><X size={15} />Stop analysis</button>}
                 </div>
                 {isAnalyzing && analysisProgress && <ProgressCard label={analysisProgress.stage === "model" ? "Getting the local speech model" : analysisProgress.detail} progress={analysisProgress.progress} />}
                 {!metadata?.hasAudio && <p className="studio-inline-warning"><AlertTriangle size={15} />No audio was detected. You can still set clip points manually and export the video.</p>}
@@ -1069,7 +1150,7 @@ export default function Studio() {
               </div>}
               {activeClip && <section className="studio-panel studio-captions-panel">
                 <div className="studio-panel-heading"><span className="studio-panel-heading__index">04</span><div><p>CAPTIONS / {cueLanguage}</p><h3>Words, in time.</h3></div><button type="button" className="studio-text-button" onClick={() => captionInputRef.current?.click()}><FileDown size={14} />Import SRT/VTT</button></div>
-                {settings.targetLanguage !== "none" && <div className="studio-translation-row"><label className="studio-field">Target language<select value={settings.targetLanguage} onChange={(event) => changeSettings({ targetLanguage: event.target.value as StudioSettings["targetLanguage"] })}><option value="none">No translation</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option></select></label><button type="button" className="studio-button studio-button--secondary" onClick={() => void runTranslation()} disabled={isTranslating || !currentCues.length || project.sourceLanguage !== "en"}><Languages size={15} />{isTranslating ? "Translating…" : "Translate this clip locally"}</button></div>}
+                {settings.targetLanguage !== "none" && <div className="studio-translation-row"><label className="studio-field">Target language<select value={settings.targetLanguage} onChange={(event) => changeSettings({ targetLanguage: event.target.value as StudioSettings["targetLanguage"] })} disabled={isBusy}><option value="none">No translation</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option></select></label><button type="button" className="studio-button studio-button--secondary" onClick={() => void runTranslation()} disabled={isTranslating || (isBusy && !isTranslating) || !currentCues.length || project.sourceLanguage !== "en"}><Languages size={15} />{isTranslating ? "Translating…" : "Translate this clip locally"}</button></div>}
                 {settings.targetLanguage === "none" && <div className="studio-translation-row"><label className="studio-field">Target language<select value={settings.targetLanguage} onChange={(event) => changeSettings({ targetLanguage: event.target.value as StudioSettings["targetLanguage"] })}><option value="none">No translation</option><option value="fr">French</option><option value="es">Spanish</option><option value="de">German</option></select></label><p className="studio-small-copy">Translation is optional. It runs locally with WebAssembly on CPU; first use may download about 215–235 MiB of model files per language and can be slower on modest devices. English source only.</p></div>}
                 {settings.targetLanguage !== "none" && <p className="studio-small-copy">This translation runs on your device with WebAssembly (CPU); first use may download about 215–235 MiB for the selected language. English source only; speed depends on your device.</p>}
                 {settings.targetLanguage !== "none" && project.sourceLanguage !== "en" && <p className="studio-inline-warning"><AlertTriangle size={14} />Choose English under Speech language in Add source and run analysis again; Auto-detect does not set the source language for translation.</p>}
@@ -1099,7 +1180,7 @@ export default function Studio() {
                 {settings.silenceRemoval && <label className="studio-field studio-range-field">Remove a gap longer than {settings.silenceThresholdSeconds.toFixed(1)} s<input type="range" min="0.7" max="2.5" step="0.1" value={settings.silenceThresholdSeconds} onChange={(event) => changeSettings({ silenceThresholdSeconds: Number(event.target.value) })} /><small>Review before export; pauses are inferred from transcription timestamps.</small></label>}
                 <label className="studio-toggle-row"><span><strong>Peak-normalize audio</strong><small>Sets the measured peak near −1 dBFS; not LUFS mastering.</small></span><input type="checkbox" checked={settings.peakNormalize} onChange={(event) => changeSettings({ peakNormalize: event.target.checked })} /></label>
                 <label className="studio-toggle-row"><span><strong>Overlay the selected title</strong><small>Brand-colored title card for the first 2.8 seconds of the clip.</small></span><input type="checkbox" checked={settings.showTitleCard} onChange={(event) => changeSettings({ showTitleCard: event.target.checked })} /></label>
-                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow a face</strong><small>Local face detection; speaker identity is not inferred.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip || isTrackingFace}>{isTrackingFace ? "Scanning…" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
+                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow a face</strong><small>Local face detection; speaker identity is not inferred.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => isTrackingFace ? cancelFaceTracking() : settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip || (isBusy && !isTrackingFace)}>{isTrackingFace ? "Stop face scan" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
                 {isTrackingFace && faceProgress && <ProgressCard label={`Checking frame ${faceProgress.completed} of ${faceProgress.total}`} progress={faceProgress.completed / Math.max(1, faceProgress.total)} />}
                 {settings.smartFraming && faceKeyframes.length === 0 && <p className="studio-inline-warning"><AlertTriangle size={14} />No saved face track for this clip. Run face detection or turn auto framing off.</p>}
                 {settings.smartFraming && faceTrackSummary && faceTrackSummary.detectedCount < faceTrackSummary.sampleCount && <p className="studio-inline-warning"><AlertTriangle size={14} />Face detections: {faceTrackSummary.detectedCount}/{faceTrackSummary.sampleCount} sample points · held {faceTrackSummary.heldCount} · manual fallback {faceTrackSummary.manualCount}. Review the crop; face detection does not identify the speaker.</p>}
@@ -1137,7 +1218,7 @@ export default function Studio() {
                 })}
                 <div className="studio-export-summary"><label className="studio-field studio-output-profile">TARGET<select value={settings.outputPlatform} disabled={isExporting} onChange={(event) => changeSettings({ outputPlatform: event.target.value as StudioSettings["outputPlatform"] })}><option value="generic">General vertical</option><option value="tiktok">TikTok</option><option value="instagram-reels">Instagram Reels</option><option value="youtube-shorts">YouTube Shorts</option></select></label><div><span>SHARED 9:16 PROFILE</span><strong>{settings.outputHeight === 1920 ? "1080 × 1920 · 30 fps" : "720 × 1280 · 30 fps"}</strong></div><div><span>FORMAT</span><strong>{outputFormat ? outputFormat.startsWith("webm") ? "WebM" : "MP4" : "Not supported"}</strong></div><div><span>MEDIA</span><strong>Local device only</strong></div></div>
                 <p className="studio-profile-note">Targets share one vertical encoding profile; the target label is added to the filename, not a guarantee of platform approval. Confirm current upload rules before posting.</p>
-                {project.clips.length > 0 && <div className="studio-export-buttons"><button type="button" className="studio-button studio-button--secondary" onClick={() => void exportOne()} disabled={isExporting || !activeClip || !outputFormat}><Download size={16} />Export selected clip</button><button type="button" className="studio-button studio-button--dark" onClick={() => void exportBatch()} disabled={isExporting || !outputFormat || !selectedForBatch.length || estimatedZipBytes > ZIP_LIMIT}><Package size={16} />{isExporting ? "Rendering batch…" : "Render selected + ZIP"}</button></div>}
+                {project.clips.length > 0 && <div className="studio-export-buttons"><button type="button" className="studio-button studio-button--secondary" onClick={() => void exportOne()} disabled={isBusy || !activeClip || !outputFormat}><Download size={16} />Export selected clip</button><button type="button" className="studio-button studio-button--dark" onClick={() => void exportBatch()} disabled={isBusy || !outputFormat || !selectedForBatch.length || estimatedZipBytes > ZIP_LIMIT}><Package size={16} />{isExporting ? "Rendering batch…" : "Render selected + ZIP"}</button></div>}
                 {estimatedZipBytes > ZIP_LIMIT && <p className="studio-inline-warning"><AlertTriangle size={14} />Estimated batch exceeds the 64 MB ZIP memory budget. Use 720p or export clips individually to a file.</p>}
                 {!outputFormat && <p className="studio-inline-warning"><AlertTriangle size={14} />No supported WebCodecs encoder pair is available. Try an up-to-date desktop Chromium browser.</p>}
                 {isExporting && exportProgress && <div className="studio-progress-block"><ProgressCard label={exportProgress.phase} progress={exportProgress.progress} indeterminate={exportProgress.phase.toLowerCase().includes("preparing")} /><p>{exportProgress.detail}</p><button type="button" className="studio-text-button" onClick={() => exportController.current?.abort()}><X size={14} />Cancel processing</button></div>}

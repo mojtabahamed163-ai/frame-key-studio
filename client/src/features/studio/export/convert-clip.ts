@@ -382,6 +382,36 @@ export function mapAudioSampleToRanges(
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
 function mimeFor(format: OutputFormat): string { return isWebm(format) ? "video/webm" : "video/mp4"; }
 
+export async function verifyExportBlob(blob: Blob, timeoutMs = 2_500): Promise<void> {
+  if (blob.size <= 0) throw new Error("The export produced an empty file. Nothing was added to the download list.");
+  if (typeof document === "undefined" || typeof URL.createObjectURL !== "function") return;
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement("video");
+  try {
+    const duration = await new Promise<number>((resolve, reject) => {
+      let settled = false;
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        callback();
+      };
+      const timer = window.setTimeout(() => finish(() => reject(new Error("The exported file could not be opened before the browser timeout."))), timeoutMs);
+      video.preload = "metadata";
+      video.muted = true;
+      video.onloadedmetadata = () => finish(() => resolve(video.duration));
+      video.onerror = () => finish(() => reject(new Error("The exported file was created but the browser could not read its video metadata.")));
+      video.src = url;
+      video.load();
+    });
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error("The exported file has no readable duration.");
+  } finally {
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(url);
+  }
+}
+
 export async function exportClip(options: {
   file: File;
   project: StudioProject;
@@ -394,9 +424,6 @@ export async function exportClip(options: {
   onProgress: (progress: ExportProgress) => void;
 }): Promise<ExportResult> {
   const { file, project, clip, cues, faceKeyframes, format, writable, signal, onProgress } = options;
-  const debug = (phase: string, detail?: unknown) => {
-    console.log("[Frame & Key export]", phase, detail ?? "");
-  };
   const duration = clip.end - clip.start;
   if (duration < 1 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
   if (!Number.isFinite(clip.start) || !Number.isFinite(clip.end) || clip.start < 0 || clip.end > project.duration + 0.05) {
@@ -407,10 +434,7 @@ export async function exportClip(options: {
   const estimatedBytes = duration * (videoBitrateForHeight(height) + 128_000) / 8 + 4_000_000;
   if (!writable && estimatedBytes > 84 * 1024 * 1024) throw new Error("This browser cannot stream directly to a file. Use 720p, shorten the clip, or export it on a browser that supports direct file saving.");
   const ranges = remapRanges(project, clip);
-  debug("start", { format, fileBytes: file.size, clipStart: clip.start, clipEnd: clip.end, ranges });
-  debug("measurePeak:start", { enabled: project.settings.peakNormalize });
   const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end) : 0;
-  debug("measurePeak:done", { peak });
   const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
   const logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
   const canvas = document.createElement("canvas");
@@ -444,7 +468,6 @@ export async function exportClip(options: {
 
   try {
     onProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
-    debug("Conversion.init:start");
     const hasAudioTrack = Boolean(await input.getPrimaryAudioTrack());
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
     conversion = await Conversion.init({
@@ -495,23 +518,21 @@ export async function exportClip(options: {
         },
       } : { discard: true },
     });
-    debug("Conversion.init:done", { isValid: conversion.isValid, discardedTracks: conversion.discardedTracks.map((item) => item.reason) });
     if (!conversion.isValid) {
       const discarded = conversion.discardedTracks.map((item) => item.reason).filter(Boolean).join("; ");
       throw new Error(discarded || "This video codec is not supported for export in this browser.");
     }
     conversion.onProgress = (progress) => onProgress({ progress, phase: "encoding", detail: `${Math.round(progress * 100)}% — encoding stays on this device` });
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
-    debug("Conversion.execute:start");
     await executeConversionWithAbort(conversion, signal);
-    debug("Conversion.execute:done", { outputState: output.state });
     if (target instanceof BufferTarget) {
       const buffer = target.buffer;
       if (!buffer) throw new Error("The export completed without a file buffer.");
       outputBlob = new Blob([buffer], { type: mimeFor(format) });
       bytesWritten = buffer.byteLength;
-      debug("BufferTarget:done", { bytesWritten });
     }
+    if (bytesWritten <= 0) throw new Error("The export completed without writing any video data.");
+    if (outputBlob) await verifyExportBlob(outputBlob);
     onProgress({ progress: 1, phase: "complete", detail: "Your file is ready on this device" });
     return {
       filename: `${(clip.selectedTitle || project.name).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 56)}-clip-${Math.round(clip.start)}.${isWebm(format) ? "webm" : "mp4"}`,
@@ -521,7 +542,6 @@ export async function exportClip(options: {
       streamed: Boolean(writable),
     };
   } catch (error) {
-    debug("failed", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
     if (output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => undefined);
     if (signal.aborted || conversion?.state === "canceled" || (error instanceof DOMException && error.name === "AbortError")) {
       throw new DOMException("Export cancelled.", "AbortError");

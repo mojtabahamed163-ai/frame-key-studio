@@ -33,6 +33,36 @@ const MIN_WORD_DURATION_SECONDS = 0.04;
 export const MAX_WORD_DURATION_SECONDS = 1.5;
 export const TRANSCRIPTION_CHUNK_SECONDS = 24;
 export const TRANSCRIPTION_OVERLAP_SECONDS = 4;
+export const MAX_SOURCE_FILE_BYTES = 1_000 * 1024 * 1024;
+export const MAX_SOURCE_DURATION_SECONDS = 30 * 60;
+export const MAX_SOURCE_DIMENSION_PX = 1920;
+export const MAX_SOURCE_PIXELS = 1920 * 1080;
+
+const SUPPORTED_VIDEO_EXTENSIONS = /\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i;
+
+export function validateVideoFileSelection(file: Pick<File, "name" | "size" | "type">): void {
+  if (!file.size) throw new Error("Choose a non-empty video file.");
+  if (file.size > MAX_SOURCE_FILE_BYTES) {
+    throw new Error("This video is larger than the 1 GB supported source limit. Choose a smaller file or a lighter export.");
+  }
+  if (!file.type.startsWith("video/") && !SUPPORTED_VIDEO_EXTENSIONS.test(file.name)) {
+    throw new Error("Choose a supported video file such as MP4, MOV, WebM, or M4V.");
+  }
+}
+
+export function validateVideoMetadata(file: Pick<File, "name" | "size" | "type">, metadata: VideoMetadata): void {
+  validateVideoFileSelection(file);
+  if (!Number.isFinite(metadata.duration) || metadata.duration <= 0) throw new Error("The video duration could not be read.");
+  if (metadata.duration > MAX_SOURCE_DURATION_SECONDS) {
+    throw new Error("This video is longer than the 30-minute supported source limit. Choose a shorter recording.");
+  }
+  if (!Number.isInteger(metadata.width) || !Number.isInteger(metadata.height) || metadata.width <= 0 || metadata.height <= 0) {
+    throw new Error("The browser could not read the video dimensions.");
+  }
+  if (metadata.width > MAX_SOURCE_DIMENSION_PX || metadata.height > MAX_SOURCE_DIMENSION_PX || metadata.width * metadata.height > MAX_SOURCE_PIXELS) {
+    throw new Error("This video is above the supported 1080p source scope. Use a 1080p-or-smaller copy before processing.");
+  }
+}
 
 export function inferMissingWordEnds(words: RawWord[], windowEnd: number): { words: RawWord[]; inferred: boolean } {
   let inferred = false;
@@ -135,6 +165,7 @@ export function hasSustainedAudioActivityAfterLastWord(
 }
 
 export async function inspectVideo(file: File): Promise<VideoMetadata> {
+  validateVideoFileSelection(file);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
     const videoTrack = await input.getPrimaryVideoTrack();
@@ -142,7 +173,7 @@ export async function inspectVideo(file: File): Promise<VideoMetadata> {
     const duration = await input.computeDuration();
     if (!Number.isFinite(duration) || duration <= 0) throw new Error("The video duration could not be read.");
     const audioTrack = await input.getPrimaryAudioTrack();
-    return {
+    const metadata = {
       duration,
       width: await videoTrack.getDisplayWidth(),
       height: await videoTrack.getDisplayHeight(),
@@ -150,6 +181,8 @@ export async function inspectVideo(file: File): Promise<VideoMetadata> {
       videoCodec: (await videoTrack.getCodec()) ?? undefined,
       audioCodec: audioTrack ? (await audioTrack.getCodec()) ?? undefined : undefined,
     };
+    validateVideoMetadata(file, metadata);
+    return metadata;
   } finally {
     input.dispose();
   }
