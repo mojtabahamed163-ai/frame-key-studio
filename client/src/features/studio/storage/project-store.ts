@@ -35,11 +35,32 @@ async function requestValue<T>(storeName: string, mode: IDBTransactionMode, acti
   const db = await openDatabase();
   return new Promise<T>((resolve, reject) => {
     const transaction = db.transaction(storeName, mode);
-    const request = action(transaction.objectStore(storeName));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Local save failed."));
-    transaction.onabort = () => reject(transaction.error ?? new Error("Local save was interrupted."));
-    transaction.oncomplete = () => db.close();
+    let result: T;
+    let settled = false;
+    const fail = (cause: DOMException | Error | null | undefined) => {
+      if (settled) return;
+      settled = true;
+      db.close();
+      reject(cause ?? new Error("Local save failed."));
+    };
+    let request: IDBRequest<T>;
+    try {
+      request = action(transaction.objectStore(storeName));
+    } catch (cause) {
+      try { transaction.abort(); } catch { /* The transaction may already be inactive. */ }
+      fail(cause instanceof Error ? cause : new Error("Local save failed."));
+      return;
+    }
+    request.onsuccess = () => { result = request.result; };
+    request.onerror = () => fail(request.error);
+    transaction.onerror = () => fail(transaction.error);
+    transaction.onabort = () => fail(transaction.error ?? new Error("Local save was interrupted."));
+    transaction.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      db.close();
+      resolve(result);
+    };
   });
 }
 

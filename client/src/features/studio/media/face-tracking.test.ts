@@ -11,6 +11,7 @@ import {
   MAX_FACE_ASSOCIATION_GAP_SECONDS,
   shouldResetFaceAssociation,
   smoothSubjectPosition,
+  shouldRunReacquisitionSweep,
   summarizeFaceTrack,
   type FaceObservation,
 } from "./face-tracking";
@@ -36,13 +37,29 @@ const observation = (time: number, xMin: number, width = 120, height = 150): Fac
 });
 
 describe("local portrait face framing", () => {
-  it("searches bounded upper and off-center ROIs only as recovery regions", () => {
+  it("covers the complete landscape frame with bounded overlapping recovery ROIs", () => {
     const regions = buildRecoveryRois(1920, 1080);
-    expect(regions).toHaveLength(6);
-    expect(regions.some((region) => region.x > 1200 && region.y < 100)).toBe(true);
+    expect(regions).toHaveLength(15);
+    expect(regions.some((region) => region.x > 1200 && region.y > 500)).toBe(true);
     expect(regions.every((region) => region.x >= 0 && region.y >= 0
       && region.x + region.width <= 1920 && region.y + region.height <= 1080)).toBe(true);
+    const xPositions = [...new Set(regions.map((region) => region.x))].sort((a, b) => a - b);
+    const yPositions = [...new Set(regions.map((region) => region.y))].sort((a, b) => a - b);
+    const side = regions[0].width;
+    expect(xPositions[0]).toBe(0);
+    expect(xPositions.at(-1)! + side).toBeCloseTo(1920);
+    expect(yPositions[0]).toBe(0);
+    expect(yPositions.at(-1)! + side).toBeCloseTo(1080);
+    expect(xPositions.slice(1).every((position, index) => position - xPositions[index] <= side)).toBe(true);
+    expect(yPositions.slice(1).every((position, index) => position - yPositions[index] <= side)).toBe(true);
     expect(buildRecoveryRois(0, 1080)).toEqual([]);
+  });
+
+  it("starts reacquisition promptly after hold and throttles repeated full sweeps by elapsed time", () => {
+    expect(shouldRunReacquisitionSweep(false, 1.36, Number.POSITIVE_INFINITY)).toBe(true);
+    expect(shouldRunReacquisitionSweep(false, 4.85, 0.1)).toBe(false);
+    expect(shouldRunReacquisitionSweep(false, 4.85, 1.5)).toBe(true);
+    expect(shouldRunReacquisitionSweep(true, 4.85, 3)).toBe(false);
   });
 
   it("limits abrupt movement while keeping coordinates inside the frame", () => {

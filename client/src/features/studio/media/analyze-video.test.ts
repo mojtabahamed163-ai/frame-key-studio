@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignAudioSampleToTimeline,
   classifyChunkWord,
+  copyAudioWindowForTail,
   fitWordToAudioWindow,
   hasSustainedAudioActivityAfterLastWord,
   inferMissingWordEnds,
   isDuplicateOverlapWord,
+  resampleAudioForWhisper,
   TRANSCRIPTION_CHUNK_SECONDS,
   TRANSCRIPTION_OVERLAP_SECONDS,
+  timestampWindowWarningCodes,
   wordBelongsToChunkWindow,
 } from "./analyze-video";
 import type { TranscriptWord } from "../types";
@@ -24,6 +28,17 @@ describe("local Whisper audio-window boundaries", () => {
     expect(wordBelongsToChunkWindow(24.1, 24.5, 20, 1)).toBe(true);
     expect(wordBelongsToChunkWindow(0.2, 0.5, 0, 0)).toBe(true);
     expect(wordBelongsToChunkWindow(-1, 0, 0, 0)).toBe(false);
+  });
+
+  it("preserves speech-band audio while suppressing frequencies that would alias below 8 kHz", () => {
+    const makeTone = (frequency: number) => Float32Array.from({ length: 48_000 }, (_, index) => 0.2 * Math.sin(2 * Math.PI * frequency * index / 48_000));
+    const rms = (samples: Float32Array) => Math.sqrt(samples.reduce((total, sample) => total + sample * sample, 0) / samples.length);
+    const speechBand = resampleAudioForWhisper(makeTone(1_000), 48_000);
+    const aboveNyquist = resampleAudioForWhisper(makeTone(12_000), 48_000);
+
+    expect(speechBand).toHaveLength(16_000);
+    expect(rms(speechBand)).toBeGreaterThan(0.12);
+    expect(rms(aboveNyquist)).toBeLessThan(0.005);
   });
 
   it("bounds an inferred word end before a later out-of-window word", () => {
@@ -64,6 +79,37 @@ describe("local Whisper audio-window boundaries", () => {
     samples.fill(0.08, 1_030);
     expect(hasSustainedAudioActivityAfterLastWord(samples, 1_000, 0, 0.85, 1.4)).toBe(true);
     expect(hasSustainedAudioActivityAfterLastWord(new Float32Array(1_400), 1_000, 0, 0.85, 1.4)).toBe(false);
+  });
+
+  it("keeps the 16 kHz tail window alive when the worker receives a transferred buffer", () => {
+    const source = new Float32Array(1_400);
+    source.fill(0.08, 1_030);
+    const tail = copyAudioWindowForTail(source);
+
+    structuredClone(source, { transfer: [source.buffer] });
+
+    expect(source.length).toBe(0);
+    expect(tail.length).toBe(1_400);
+    expect(hasSustainedAudioActivityAfterLastWord(tail, 1_000, 0, 0.85, 1.4)).toBe(true);
+  });
+
+  it("inserts silence for PTS gaps and removes overlapping sample frames", () => {
+    const afterGap = alignAudioSampleToTimeline(new Float32Array([1, 2]), 1, 0, 10);
+    expect(afterGap.gapFrames).toBe(10);
+    expect([...afterGap.samples]).toEqual([1, 2]);
+
+    const afterOverlap = alignAudioSampleToTimeline(new Float32Array([1, 2, 3, 4]), 0.8, 1, 10);
+    expect(afterOverlap.gapFrames).toBe(0);
+    expect(afterOverlap.droppedOverlapFrames).toBe(2);
+    expect([...afterOverlap.samples]).toEqual([3, 4]);
+  });
+
+  it("warns about a timestamped word after the audio window even when it has no end", () => {
+    expect(timestampWindowWarningCodes(25, null, 0, 24, true)).toEqual([
+      "timestamp-outside-audio-window",
+      "timestamp-outside-source-tail",
+    ]);
+    expect(timestampWindowWarningCodes(12, null, 0, 24, false)).toEqual([]);
   });
 
   it("bounds a missing terminal word end without inventing text or exceeding the audio window", () => {

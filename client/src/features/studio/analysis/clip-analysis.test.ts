@@ -153,6 +153,13 @@ describe("local transcript analysis", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]).toMatchObject({ start: 0.5, end: 3, text: cue.text });
   });
+  it("aligns captions after a removed pause to the same 30fps export timeline", () => {
+    const cue = { id: "cue", start: 3.8, end: 4.4, text: "Second retained line.", words: [] };
+    const mapped = mapCaptionCuesToOutput([cue], 0, 6, [{ start: 1.38, end: 2.22 }, { start: 3.68, end: 4.52 }], 30);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0].start).toBeCloseTo(26 / 30 + 0.12, 6);
+    expect(mapped[0].end).toBeCloseTo(26 / 30 + 0.72, 6);
+  });
   it("maps a word at source 10.5–10.8 to output 0.5–0.8 and keeps it active at 0.6", () => {
     const cue = {
       id: "cue-word",

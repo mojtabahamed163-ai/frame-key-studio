@@ -13,7 +13,7 @@ import {
   VideoSample,
   WebMOutputFormat,
 } from "mediabunny";
-import { buildClipSpeechRanges, mapSourceTimeToOutput } from "../analysis/clip-analysis";
+import { buildClipSpeechRanges, EXPORT_FRAME_RATE } from "../analysis/clip-analysis";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { cropForPortrait } from "../media/framing";
 import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetadata } from "../types";
@@ -38,23 +38,46 @@ export function videoBitrateForHeight(height: number): number {
   return height === 1920 ? 12_000_000 : 6_000_000;
 }
 
-export async function supportedOutputFormat(height: number): Promise<OutputFormat | null> {
-  if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis)) return null;
+export async function supportedOutputFormat(height: number, hasAudio = true): Promise<OutputFormat | null> {
+  if (typeof globalThis.VideoEncoder !== "function" || (hasAudio && typeof globalThis.AudioEncoder !== "function")) return null;
   const width = Math.round(height * 9 / 16);
   const videoSupported = async (codec: string) => {
     try {
-      const result = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: videoBitrateForHeight(height), framerate: 30 });
+      const result = await globalThis.VideoEncoder.isConfigSupported({ codec, width, height, bitrate: videoBitrateForHeight(height), framerate: 30 });
       return Boolean(result.supported);
     } catch { return false; }
   };
   const audioSupported = async (codec: string) => {
-    try { return Boolean((await AudioEncoder.isConfigSupported({ codec, sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 })).supported); }
+    try { return Boolean((await globalThis.AudioEncoder.isConfigSupported({ codec, sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 })).supported); }
     catch { return false; }
   };
-  if (await videoSupported("avc1.42001f") && await audioSupported("mp4a.40.2")) return "mp4";
-  if (await videoSupported("vp09.00.10.08") && await audioSupported("opus")) return "webm-vp9";
-  if (await videoSupported("vp8") && await audioSupported("opus")) return "webm-vp8";
+  if (await videoSupported("avc1.42001f") && (!hasAudio || await audioSupported("mp4a.40.2"))) return "mp4";
+  if (await videoSupported("vp09.00.10.08") && (!hasAudio || await audioSupported("opus"))) return "webm-vp9";
+  if (await videoSupported("vp8") && (!hasAudio || await audioSupported("opus"))) return "webm-vp8";
   return null;
+}
+
+export async function executeConversionWithAbort(
+  conversion: Pick<Conversion, "execute" | "cancel" | "state">,
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+  const onAbort = () => {
+    if (conversion.state === "executing") void conversion.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    if (signal.aborted) onAbort();
+    await conversion.execute();
+    if (signal.aborted || conversion.state === "canceled") throw new DOMException("Export cancelled.", "AbortError");
+  } catch (cause) {
+    if (signal.aborted || conversion.state === "canceled" || (cause instanceof DOMException && cause.name === "AbortError")) {
+      throw new DOMException("Export cancelled.", "AbortError");
+    }
+    throw cause;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 let savePickerUnavailable = false;
@@ -221,7 +244,7 @@ export function drawExportFrame(
   settings: StudioProject["settings"],
   logo: ImageBitmap | null,
 ): number | null {
-  const outputTime = mapSourceTimeToOutput(localTime, ranges);
+  const outputTime = mapSourceTimeToExportOutput(localTime, ranges);
   if (outputTime == null) return null;
   const width = context.canvas.width;
   const height = context.canvas.height;
@@ -278,10 +301,82 @@ async function measurePeak(file: File, start: number, end: number): Promise<numb
   } finally { input.dispose(); }
 }
 
-function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
+export function remapRanges(
+  project: Pick<StudioProject, "settings" | "words" | "editedCues">,
+  clip: Pick<ClipSuggestion, "start" | "end">,
+): SpeechRange[] {
   const duration = Math.max(0.05, clip.end - clip.start);
-  if (!project.settings.silenceRemoval || !project.words.length) return [{ start: 0, end: duration }];
+  if (!project.settings.silenceRemoval) return [{ start: 0, end: duration }];
   return buildClipSpeechRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds, project.editedCues);
+}
+
+export function mapSourceTimeToExportOutput(time: number, ranges: SpeechRange[], frameRate = EXPORT_FRAME_RATE): number | null {
+  const ordered = [...ranges].filter((range) => range.end > range.start).sort((left, right) => left.start - right.start);
+  let outputCursor = 0;
+  for (let index = 0; index < ordered.length; index += 1) {
+    const range = ordered[index];
+    const isLastRange = index === ordered.length - 1;
+    if (time >= range.start && (time < range.end || (isLastRange && time <= range.end))) {
+      return outputCursor + time - range.start;
+    }
+    if (time < range.start) return null;
+    outputCursor += range.end - range.start;
+    if (index < ordered.length - 1 && Number.isFinite(frameRate) && frameRate > 0) {
+      outputCursor = Math.ceil(outputCursor * frameRate - 1e-9) / frameRate;
+    }
+  }
+  return null;
+}
+
+export function resolveOutputPreviewSourceTime(localTime: number, ranges: SpeechRange[]): number | null {
+  const ordered = [...ranges].filter((range) => range.end > range.start).sort((left, right) => left.start - right.start);
+  if (mapSourceTimeToExportOutput(localTime, ordered) != null) return localTime;
+  const nextRange = ordered.find((range) => range.start > localTime);
+  if (nextRange) return nextRange.start;
+  const lastRange = ordered[ordered.length - 1];
+  return lastRange && localTime > lastRange.end ? lastRange.end : null;
+}
+
+export interface MappedTimeSegment { sourceStart: number; duration: number; outputTime: number }
+export interface MappedAudioSegment extends MappedTimeSegment { startFrame: number; endFrame: number }
+
+export function mapIntervalToOutputSegments(sourceStart: number, duration: number, ranges: SpeechRange[]): MappedTimeSegment[] {
+  if (!Number.isFinite(sourceStart) || !Number.isFinite(duration) || duration <= 0) return [];
+  const sourceEnd = sourceStart + duration;
+  const orderedRanges = [...ranges]
+    .filter((range) => Number.isFinite(range.start) && Number.isFinite(range.end) && range.end > range.start)
+    .sort((left, right) => left.start - right.start);
+  return orderedRanges.flatMap((range) => {
+      const keptStart = Math.max(sourceStart, range.start);
+      const keptEnd = Math.min(sourceEnd, range.end);
+      if (keptEnd - keptStart <= 1e-9) return [];
+      const outputTime = mapSourceTimeToExportOutput(keptStart, orderedRanges);
+      return outputTime == null ? [] : [{ sourceStart: keptStart, duration: keptEnd - keptStart, outputTime }];
+    });
+}
+
+export function mapAudioSampleToRanges(
+  sourceStart: number,
+  frameCount: number,
+  sampleRate: number,
+  ranges: SpeechRange[],
+): MappedAudioSegment[] {
+  if (!Number.isFinite(frameCount) || frameCount <= 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) return [];
+  return mapIntervalToOutputSegments(sourceStart, frameCount / sampleRate, ranges).flatMap((segment) => {
+    const startFrame = Math.max(0, Math.min(frameCount, Math.ceil((segment.sourceStart - sourceStart) * sampleRate - 1e-7)));
+    const segmentEnd = segment.sourceStart + segment.duration;
+    const endFrame = Math.max(0, Math.min(frameCount, Math.ceil((segmentEnd - sourceStart) * sampleRate - 1e-7)));
+    if (endFrame <= startFrame) return [];
+    const exactSourceStart = sourceStart + startFrame / sampleRate;
+    const outputTime = segment.outputTime + exactSourceStart - segment.sourceStart;
+    return [{
+      sourceStart: exactSourceStart,
+      duration: (endFrame - startFrame) / sampleRate,
+      outputTime,
+      startFrame,
+      endFrame,
+    }];
+  });
 }
 
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
@@ -303,7 +398,7 @@ export async function exportClip(options: {
     console.log("[Frame & Key export]", phase, detail ?? "");
   };
   const duration = clip.end - clip.start;
-  if (duration <= 0 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
+  if (duration < 1 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
   if (!Number.isFinite(clip.start) || !Number.isFinite(clip.end) || clip.start < 0 || clip.end > project.duration + 0.05) {
     throw new Error("The clip boundaries are outside the source video. Correct the in/out points before exporting.");
   }
@@ -323,8 +418,6 @@ export async function exportClip(options: {
   canvas.height = height;
   const context = canvas.getContext("2d", { alpha: false });
   if (!context) throw new Error("Canvas encoding is unavailable in this browser.");
-  let firstVideoTime: number | null = null;
-  let firstAudioTime: number | null = null;
   let bytesWritten = 0;
   let target: BufferTarget | StreamTarget;
   let outputBlob: Blob | undefined;
@@ -352,6 +445,8 @@ export async function exportClip(options: {
   try {
     onProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
     debug("Conversion.init:start");
+    const hasAudioTrack = Boolean(await input.getPrimaryAudioTrack());
+    if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
     conversion = await Conversion.init({
       input,
       output,
@@ -367,36 +462,38 @@ export async function exportClip(options: {
         processedHeight: height,
         process: (sample) => {
           if (signal.aborted) return null;
-          if (firstVideoTime == null) firstVideoTime = sample.timestamp;
-          const localTime = Math.max(0, sample.timestamp - firstVideoTime);
-          const mappedTime = drawExportFrame(context, sample, localTime, ranges, clip, cues, faceKeyframes, project.settings, logo);
-          if (mappedTime == null) return null;
-          const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
-          return frame;
+          const segments = mapIntervalToOutputSegments(sample.timestamp - clip.start, sample.duration, ranges);
+          const frames = segments.flatMap((segment) => {
+            const mappedTime = drawExportFrame(context, sample, segment.sourceStart, ranges, clip, cues, faceKeyframes, project.settings, logo);
+            return mappedTime == null ? [] : [new VideoSample(canvas, { timestamp: segment.outputTime, duration: segment.duration })];
+          });
+          return frames.length > 1 ? frames : frames[0] ?? null;
         },
       },
-      audio: {
+      audio: hasAudioTrack ? {
         codec: format === "mp4" ? "aac" : "opus",
         quality: new Quality({ bitrate: 128_000 }),
         process: (sample) => {
           if (signal.aborted) return null;
-          if (firstAudioTime == null) firstAudioTime = sample.timestamp;
-          const localTime = Math.max(0, sample.timestamp - firstAudioTime);
-          const mappedTime = mapSourceTimeToOutput(localTime + sample.duration / 2, ranges);
-          if (mappedTime == null) return null;
+          const segments = mapAudioSampleToRanges(sample.timestamp - clip.start, sample.numberOfFrames, sample.sampleRate, ranges);
+          if (!segments.length) return null;
           const buffer = sample.toAudioBuffer();
-          const frames = sample.numberOfFrames;
           const channels = sample.numberOfChannels;
-          const data = new Float32Array(frames * channels);
-          for (let channel = 0; channel < channels; channel += 1) {
-            const channelData = buffer.getChannelData(channel);
-            const offset = channel * frames;
-            for (let index = 0; index < frames; index += 1) data[offset + index] = Math.max(-1, Math.min(1, channelData[index] * gain));
-          }
-          const transformed = new AudioSample({ data, format: "f32-planar", numberOfChannels: channels, sampleRate: sample.sampleRate, timestamp: mappedTime });
-          return transformed;
+          return segments.map((segment) => {
+            const frames = segment.endFrame - segment.startFrame;
+            const data = new Float32Array(frames * channels);
+            for (let channel = 0; channel < channels; channel += 1) {
+              const channelData = buffer.getChannelData(channel);
+              const offset = channel * frames;
+              for (let index = 0; index < frames; index += 1) {
+                const value = channelData[segment.startFrame + index] ?? 0;
+                data[offset + index] = Math.max(-1, Math.min(1, value * gain));
+              }
+            }
+            return new AudioSample({ data, format: "f32-planar", numberOfChannels: channels, sampleRate: sample.sampleRate, timestamp: segment.outputTime });
+          });
         },
-      },
+      } : { discard: true },
     });
     debug("Conversion.init:done", { isValid: conversion.isValid, discardedTracks: conversion.discardedTracks.map((item) => item.reason) });
     if (!conversion.isValid) {
@@ -406,7 +503,7 @@ export async function exportClip(options: {
     conversion.onProgress = (progress) => onProgress({ progress, phase: "encoding", detail: `${Math.round(progress * 100)}% — encoding stays on this device` });
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
     debug("Conversion.execute:start");
-    await conversion.execute();
+    await executeConversionWithAbort(conversion, signal);
     debug("Conversion.execute:done", { outputState: output.state });
     if (target instanceof BufferTarget) {
       const buffer = target.buffer;
@@ -426,7 +523,9 @@ export async function exportClip(options: {
   } catch (error) {
     debug("failed", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
     if (output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => undefined);
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    if (signal.aborted || conversion?.state === "canceled" || (error instanceof DOMException && error.name === "AbortError")) {
+      throw new DOMException("Export cancelled.", "AbortError");
+    }
     const message = error instanceof Error ? error.message : "Export failed on this device.";
     if (/memory|buffer|allocation/i.test(message)) throw new Error("This browser ran out of memory. Try 720p, a shorter clip, or saving one clip at a time.");
     throw new Error(message);

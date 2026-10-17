@@ -21,6 +21,21 @@ export interface TranslationIdentity {
   targetLanguage: string;
 }
 
+export interface ProjectSnapshotIdentity { projectId: string; projectRevision: number }
+
+export function isCurrentProjectSnapshot(expected: ProjectSnapshotIdentity, current: ProjectSnapshotIdentity): boolean {
+  return expected.projectId === current.projectId && expected.projectRevision === current.projectRevision;
+}
+
+export function createSerializedAsyncQueue() {
+  let tail: Promise<void> = Promise.resolve();
+  return function enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = tail.then(operation, operation);
+    tail = result.then(() => undefined, () => undefined);
+    return result;
+  };
+}
+
 export function isOperationOwner(expected: AbortController, current: AbortController | null): boolean {
   return expected === current;
 }
@@ -59,4 +74,15 @@ export function matchesReselectedSource(
 
 export function recoveryProjectAfterOpenFailure<T extends { sourceSavedInOpfs: boolean }>(project: T): T | null {
   return project.sourceSavedInOpfs ? project : null;
+}
+
+export function shouldClearPendingProject(pending: { id: string } | null, deleted: { id: string }): boolean {
+  return pending?.id === deleted.id;
+}
+
+export function markSourceSavedIfMatchingProject<T extends { id: string; sourceSavedInOpfs: boolean }>(
+  current: T | null,
+  projectId: string,
+): T | null {
+  return current?.id === projectId ? { ...current, sourceSavedInOpfs: true } : current;
 }

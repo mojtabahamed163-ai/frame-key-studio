@@ -1,5 +1,6 @@
 import { ALL_FORMATS, AudioSampleSink, BlobSource, Input } from "mediabunny";
 import type { TranscriptWord, TranscriptionWarningCode, VideoMetadata } from "../types";
+import { requestWorkerResult } from "../worker-request";
 
 export interface AnalysisProgress {
   stage: "metadata" | "audio" | "model" | "transcribing";
@@ -179,20 +180,69 @@ function concatenate(chunks: Float32Array[], totalLength: number): Float32Array 
   return result;
 }
 
-function resampleLinear(input: Float32Array, inputRate: number): Float32Array {
+export function resampleAudioForWhisper(input: Float32Array, inputRate: number): Float32Array {
   if (inputRate === TARGET_RATE) return input;
-  const outputLength = Math.max(1, Math.floor(input.length * TARGET_RATE / inputRate));
+  if (!Number.isFinite(inputRate) || inputRate <= 0) throw new RangeError("Audio sample rate must be positive.");
+  const outputLength = Math.max(0, Math.floor(input.length * TARGET_RATE / inputRate));
   const output = new Float32Array(outputLength);
   const ratio = inputRate / TARGET_RATE;
+  const cutoff = 0.47 * Math.min(1, TARGET_RATE / inputRate);
+  const radius = 24;
+  const scale = 2 * cutoff;
   for (let index = 0; index < outputLength; index += 1) {
-    const sourceIndex = index * ratio;
-    const left = Math.floor(sourceIndex);
-    const fraction = sourceIndex - left;
-    const a = input[Math.min(left, input.length - 1)] ?? 0;
-    const b = input[Math.min(left + 1, input.length - 1)] ?? a;
-    output[index] = a + (b - a) * fraction;
+    const position = index * ratio;
+    const center = Math.floor(position);
+    const fraction = position - center;
+    let weightedSample = 0;
+    let weightTotal = 0;
+    for (let tap = -radius; tap <= radius; tap += 1) {
+      const distance = tap - fraction;
+      if (Math.abs(distance) > radius) continue;
+      const normalizedDistance = scale * distance;
+      const sinc = normalizedDistance === 0 ? 1 : Math.sin(Math.PI * normalizedDistance) / (Math.PI * normalizedDistance);
+      const window = 0.42 + 0.5 * Math.cos(Math.PI * distance / radius) + 0.08 * Math.cos(2 * Math.PI * distance / radius);
+      const weight = scale * sinc * window;
+      const sourceIndex = Math.max(0, Math.min(input.length - 1, center + tap));
+      weightedSample += (input[sourceIndex] ?? 0) * weight;
+      weightTotal += weight;
+    }
+    output[index] = weightTotal === 0 ? 0 : weightedSample / weightTotal;
   }
   return output;
+}
+
+export function copyAudioWindowForTail(samples: Float32Array): Float32Array {
+  return samples.slice();
+}
+
+export function alignAudioSampleToTimeline(
+  samples: Float32Array,
+  sampleTimestamp: number,
+  expectedTimestamp: number,
+  sampleRate: number,
+): { gapFrames: number; samples: Float32Array; droppedOverlapFrames: number } {
+  if (!Number.isFinite(sampleTimestamp) || !Number.isFinite(expectedTimestamp) || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return { gapFrames: 0, samples: new Float32Array(), droppedOverlapFrames: samples.length };
+  }
+  const offsetFrames = Math.round((sampleTimestamp - expectedTimestamp) * sampleRate);
+  if (offsetFrames > 0) return { gapFrames: offsetFrames, samples, droppedOverlapFrames: 0 };
+  const droppedOverlapFrames = Math.min(samples.length, Math.max(0, -offsetFrames));
+  return { gapFrames: 0, samples: samples.subarray(droppedOverlapFrames), droppedOverlapFrames };
+}
+
+export function timestampWindowWarningCodes(
+  start: number | null,
+  end: number | null,
+  windowStart: number,
+  windowEnd: number,
+  isSourceTail: boolean,
+): TranscriptionWarningCode[] {
+  const outside = (start != null && Number.isFinite(start) && (start < windowStart - 0.05 || start > windowEnd + 0.05))
+    || (end != null && Number.isFinite(end) && (end < windowStart - 0.05 || end > windowEnd + 0.05));
+  if (!outside) return [];
+  return isSourceTail
+    ? ["timestamp-outside-audio-window", "timestamp-outside-source-tail"]
+    : ["timestamp-outside-audio-window"];
 }
 
 function createWorker(): Worker {
@@ -201,32 +251,21 @@ function createWorker(): Worker {
 
 function recognize(worker: Worker, audio: Float32Array, offsetSeconds: number, language: string, signal: AbortSignal, onProgress: (progress: AnalysisProgress) => void): Promise<RawWord[]> {
   const jobId = `asr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      worker.removeEventListener("message", handleMessage);
-      signal.removeEventListener("abort", handleAbort);
-    };
-    const handleAbort = () => { cleanup(); reject(new DOMException("Analysis cancelled.", "AbortError")); };
-    const handleMessage = (event: MessageEvent<WorkerReply>) => {
-      const data = event.data;
-      if (data.jobId !== jobId) return;
-      if (data.type === "model-progress") {
-        onProgress({ stage: "model", progress: Math.max(0, Math.min(1, data.progress ?? 0)), detail: data.status ?? "Downloading the local model" });
-      } else if (data.type === "progress") {
-        onProgress({ stage: "transcribing", progress: 0, detail: data.detail ?? `Transcribing a ${TRANSCRIPTION_CHUNK_SECONDS}-second audio window` });
-      } else if (data.type === "error") {
-        cleanup();
-        reject(new Error(data.message ?? "The local speech model could not run."));
-      } else if (data.type === "result") {
-        cleanup();
-        resolve(data.chunks ?? []);
-      }
-    };
-    worker.addEventListener("message", handleMessage);
-    signal.addEventListener("abort", handleAbort, { once: true });
-    if (signal.aborted) { handleAbort(); return; }
-    worker.postMessage({ jobId, audio, offsetSeconds, language }, [audio.buffer]);
-  });
+  return requestWorkerResult<WorkerReply>(
+    worker,
+    jobId,
+    () => worker.postMessage({ jobId, audio, offsetSeconds, language }, [audio.buffer]),
+    {
+      signal,
+      onProgress: (data) => {
+        if (data.type === "model-progress") {
+          onProgress({ stage: "model", progress: Math.max(0, Math.min(1, data.progress ?? 0)), detail: data.status ?? "Downloading the local model" });
+        } else {
+          onProgress({ stage: "transcribing", progress: 0, detail: data.detail ?? `Transcribing a ${TRANSCRIPTION_CHUNK_SECONDS}-second audio window` });
+        }
+      },
+    },
+  ).then((data) => data.chunks ?? []);
 }
 
 export async function transcribeVideo(
@@ -264,10 +303,12 @@ export async function transcribeVideo(
       const carry = mono.slice(mono.length - carryFrames);
       const nextChunkStart = chunkStartSeconds + (mono.length - carryFrames) / sampleRate;
       const windowEnd = Math.min(duration, chunkStartSeconds + chunkDuration);
-      lastAudioWindow = mono;
+      // `recognize` transfers its Float32Array to the worker. Keep an independent
+      // copy for the final-tail check so a 16 kHz source cannot detach the alias.
+      lastAudioWindow = copyAudioWindowForTail(mono);
       lastAudioWindowStart = chunkStartSeconds;
       lastAudioWindowEnd = windowEnd;
-      const audio = resampleLinear(mono, sampleRate);
+      const audio = resampleAudioForWhisper(mono, sampleRate);
       const response = await recognize(worker, audio, chunkStartSeconds, language, signal, onProgress);
       const { words: replies, inferred } = inferMissingWordEnds(response, windowEnd);
       if (inferred) warningCodes.add("inferred-word-end");
@@ -307,19 +348,52 @@ export async function transcribeVideo(
       newFramesSinceChunk = 0;
     };
 
+    const appendFrames = async (frames: Float32Array) => {
+      const maxFrames = Math.round(sampleRate * TRANSCRIPTION_CHUNK_SECONDS);
+      let offset = 0;
+      while (offset < frames.length) {
+        if (sampleCount >= maxFrames) {
+          await sendChunk(chunkStart);
+          continue;
+        }
+        const length = Math.min(maxFrames - sampleCount, frames.length - offset);
+        chunks.push(frames.slice(offset, offset + length));
+        sampleCount += length;
+        newFramesSinceChunk += length;
+        offset += length;
+        if (sampleCount >= maxFrames) await sendChunk(chunkStart);
+      }
+    };
+
+    const appendSilence = async (frames: number) => {
+      let remaining = frames;
+      const maxFrames = Math.round(sampleRate * TRANSCRIPTION_CHUNK_SECONDS);
+      while (remaining > 0) {
+        if (sampleCount >= maxFrames) {
+          await sendChunk(chunkStart);
+          continue;
+        }
+        const length = Math.min(remaining, maxFrames - sampleCount);
+        await appendFrames(new Float32Array(length));
+        remaining -= length;
+      }
+    };
+
     onProgress({ stage: "audio", progress: 0, detail: "Reading audio locally in short windows" });
     for await (const sample of sink.samples()) {
       if (signal.aborted) throw new DOMException("Analysis cancelled.", "AbortError");
+      let mono: Float32Array;
+      const timestamp = sample.timestamp;
       try {
-        if (chunkNumber === 0 && sampleCount === 0) chunkStart = sample.timestamp;
-        chunks.push(downmixToMono(sample));
-        sampleCount += sample.numberOfFrames;
-        newFramesSinceChunk += sample.numberOfFrames;
+        mono = downmixToMono(sample);
       } finally {
         sample.close();
       }
-      const secondsInChunk = sampleCount / sampleRate;
-      if (secondsInChunk >= TRANSCRIPTION_CHUNK_SECONDS) await sendChunk(chunkStart);
+      if (chunkNumber === 0 && sampleCount === 0) chunkStart = timestamp;
+      const expectedTimestamp = chunkStart + sampleCount / sampleRate;
+      const aligned = alignAudioSampleToTimeline(mono, timestamp, expectedTimestamp, sampleRate);
+      if (aligned.gapFrames > 0) await appendSilence(aligned.gapFrames);
+      if (aligned.samples.length) await appendFrames(aligned.samples);
     }
     if (chunkNumber === 0 || newFramesSinceChunk > 0) await sendChunk(chunkStart);
     const lastWordEnd = outputWords.reduce((maximum, word) => Math.max(maximum, word.end), 0);

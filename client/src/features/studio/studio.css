@@ -169,6 +169,8 @@
 .studio-preview-clip-label span { color: #efb58f; font-size: 6px; font-weight: 800; letter-spacing: .13em; }
 .studio-preview-clip-label strong { overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .studio-preview-footer { padding: 8px 1px 0; }
+.studio-preview-silence-note { margin: 4px 1px 0; color: #73766e; font-size: 7px; line-height: 1.5; }
+.studio-preview-gap-note { position: absolute; z-index: 5; right: 7%; bottom: 8%; left: 7%; padding: 7px; border-radius: 3px; color: #fff; background: rgba(16,25,22,.88); font-size: 9px; text-align: center; pointer-events: none; }
 .studio-cut-controls { padding: 14px 16px; border: 1px solid var(--line); background: rgba(255,253,248,.7); }
 .studio-cut-controls__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .studio-time-row { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 9px; margin-top: 8px; }

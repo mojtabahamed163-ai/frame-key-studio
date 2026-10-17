@@ -1,5 +1,11 @@
 import type { CaptionCue } from "../types";
 
+export function translatedCuesForLanguage(cues: CaptionCue[], targetLanguage: string): CaptionCue[] {
+  if (targetLanguage === "none") return [];
+  const prefix = `translated-${targetLanguage}-`;
+  return cues.filter((cue) => cue.id.startsWith(prefix));
+}
+
 export function applyCaptionCuePatch(
   cue: CaptionCue,
   patch: Partial<Pick<CaptionCue, "text" | "start" | "end">>,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCaptionCuePatch } from "./caption-edits";
+import { applyCaptionCuePatch, translatedCuesForLanguage } from "./caption-edits";
 import type { CaptionCue } from "../types";
 
 const cue: CaptionCue = {
@@ -26,5 +26,12 @@ describe("caption cue editing", () => {
     expect(updated.start).toBe(5.45);
     expect(updated.words.every((word) => word.end > word.start)).toBe(true);
     expect(updated.words.every((word) => word.end - word.start >= 0.04)).toBe(true);
+  });
+
+  it("returns only translated cues for the selected target language", () => {
+    const french = { ...cue, id: "translated-fr-cue-1", text: "Bonjour" };
+    const german = { ...cue, id: "translated-de-cue-1", text: "Guten Tag" };
+    expect(translatedCuesForLanguage([french, german], "de")).toEqual([german]);
+    expect(translatedCuesForLanguage([french, german], "none")).toEqual([]);
   });
 });

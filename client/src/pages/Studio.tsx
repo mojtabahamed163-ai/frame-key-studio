@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, Download,
   FileDown, FileText, Film, FolderOpen, HardDrive, Languages, LoaderCircle,
@@ -8,9 +8,9 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
-import { applyCaptionCuePatch } from "@/features/studio/analysis/caption-edits";
-import { buildCaptionCues, buildClipSpeechRanges, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
-import { isCurrentFaceTrack, isCurrentSourceOperation, isCurrentTranslation, isOperationOwner, matchesReselectedSource, recoveryProjectAfterOpenFailure } from "@/features/studio/async-guards";
+import { applyCaptionCuePatch, translatedCuesForLanguage } from "@/features/studio/analysis/caption-edits";
+import { buildCaptionCues, buildClipSpeechRanges, EXPORT_FRAME_RATE, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { createSerializedAsyncQueue, isCurrentFaceTrack, isCurrentProjectSnapshot, isCurrentSourceOperation, isCurrentTranslation, isOperationOwner, markSourceSavedIfMatchingProject, matchesReselectedSource, recoveryProjectAfterOpenFailure, shouldClearPendingProject } from "@/features/studio/async-guards";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
@@ -62,8 +62,8 @@ function sourceCues(project: StudioProject): CaptionCue[] {
 
 function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
   const messages: string[] = [];
-  if (codes.includes("timestamp-outside-source-tail")) messages.push("Whisper returned word timestamps beyond the final audio window; those out-of-range words were excluded.");
-  else if (codes.includes("timestamp-outside-audio-window")) messages.push("Whisper returned word timestamps outside an audio window; those out-of-range words were excluded.");
+  if (codes.includes("timestamp-outside-source-tail")) messages.push("Whisper returned word timestamps outside the final audio window; small boundary drift may be clipped while larger overruns are excluded. Review the last captions.");
+  else if (codes.includes("timestamp-outside-audio-window")) messages.push("Whisper returned word timestamps outside an audio window; small boundary drift may be clipped while larger overruns are excluded. Review nearby captions.");
   if (codes.includes("suspicious-word-duration")) messages.push("Whisper returned a word with an implausibly long timestamp; it was excluded, so review the nearby transcript.");
   if (codes.includes("audio-activity-after-last-word")) messages.push("Sustained audio activity continues after the last accepted word. Listen to the final seconds for a missing phrase.");
   if (codes.includes("inferred-word-end")) messages.push("A final word arrived without an end timestamp; its end was bounded by the next word or the audio window. Review the last caption.");
@@ -98,6 +98,8 @@ export default function Studio() {
   const translationController = useRef<AbortController | null>(null);
   const sourceGeneration = useRef(0);
   const projectRevision = useRef(0);
+  const projectWriteQueue = useMemo(() => createSerializedAsyncQueue(), []);
+  const activeProjectIdRef = useRef<string | null>(null);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const targetLanguageRef = useRef(settings.targetLanguage);
@@ -111,6 +113,8 @@ export default function Studio() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [isTrackingFace, setIsTrackingFace] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSavingSource, setIsSavingSource] = useState(false);
+  const [isProjectTransitioning, setIsProjectTransitioning] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null);
   const [translationProgress, setTranslationProgress] = useState<TranslationProgress | null>(null);
   const [faceProgress, setFaceProgress] = useState<FaceTrackingProgress | null>(null);
@@ -129,6 +133,7 @@ export default function Studio() {
   const [localStorageReady, setLocalStorageReady] = useState(false);
   const [dragging, setDragging] = useState(false);
 
+  activeProjectIdRef.current = project?.id ?? null;
   const activeClip = useMemo(() => project?.clips.find((clip) => clip.id === project.selectedClipId) ?? null, [project]);
   const faceKeyframes = useMemo(() => activeClip && project ? project.faceKeyframesByClip[activeClip.id] ?? [] : [], [activeClip, project]);
   const faceTrackSummary = useMemo(() => activeClip
@@ -136,9 +141,10 @@ export default function Studio() {
     : null, [activeClip, faceKeyframes]);
   const currentCues = useMemo(() => {
     if (!project) return [];
-    const translatedForClip = activeClip ? project.translatedCues.some((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end) : project.translatedCues.length > 0;
+    const translatedCues = translatedCuesForLanguage(project.translatedCues, settings.targetLanguage);
+    const translatedForClip = activeClip ? translatedCues.some((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end) : translatedCues.length > 0;
     const cues = settings.targetLanguage !== "none" && project.translatedLanguage === settings.targetLanguage && translatedForClip
-      ? project.translatedCues
+      ? translatedCues
       : sourceCues(project);
     return settings.captionMode === "word" ? toWordCues(cues) : cues;
   }, [project, settings.targetLanguage, settings.captionMode, activeClip]);
@@ -146,7 +152,21 @@ export default function Studio() {
   const estimatedZipBytes = project ? estimateOutputBytes(project.clips.filter((clip) => selectedForBatch.includes(clip.id)), settings) : 0;
   const portraitQuality = project ? portraitCropQuality(project.width, project.height, settings.outputHeight) : null;
   const hasSavePicker = typeof getPickerWindow().showSaveFilePicker === "function";
-  const isBusy = isAnalyzing || isTranslating || isTrackingFace || isExporting;
+  const isBusy = isAnalyzing || isTranslating || isTrackingFace || isExporting || isSavingSource || isProjectTransitioning;
+  const isCurrentSnapshot = useCallback((projectId: string, revision: number) => isCurrentProjectSnapshot(
+    { projectId, projectRevision: revision },
+    { projectId: activeProjectIdRef.current ?? "", projectRevision: projectRevision.current },
+  ), []);
+  const queueProjectSnapshotSave = useCallback((snapshot: StudioProject, revision: number, force = false): Promise<boolean> => projectWriteQueue(async () => {
+    if (!force && !isCurrentSnapshot(snapshot.id, revision)) return false;
+    await saveProject(snapshot);
+    if (!isCurrentSnapshot(snapshot.id, revision)) return false;
+    const projects = await listProjects();
+    if (!isCurrentSnapshot(snapshot.id, revision)) return false;
+    setSavedProjects(projects);
+    setSaveState("saved");
+    return true;
+  }), [projectWriteQueue, isCurrentSnapshot]);
 
   useEffect(() => {
     document.title = "Local Video Studio — Frame & Key";
@@ -169,18 +189,18 @@ export default function Studio() {
 
   useEffect(() => {
     if (!project || !localStorageReady) return;
+    const revision = projectRevision.current;
+    const projectId = project.id;
     setSaveState("saving");
     const timer = window.setTimeout(() => {
-      void saveProject(project).then(async () => {
-        setSaveState("saved");
-        setSavedProjects(await listProjects());
-      }).catch(() => {
+      void queueProjectSnapshotSave(project, revision).catch(() => {
+        if (!isCurrentSnapshot(projectId, revision)) return;
         setSaveState("error");
         setError("Local save failed. Keep this tab open and make another edit to retry saving your project.");
       });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [project, localStorageReady]);
+  }, [project, localStorageReady, isCurrentSnapshot, queueProjectSnapshotSave]);
 
   useEffect(() => {
     if (!localStorageReady) return;
@@ -197,9 +217,9 @@ export default function Studio() {
 
   useEffect(() => {
     let alive = true;
-    void supportedOutputFormat(settings.outputHeight).then((format) => { if (alive) setOutputFormat(format); }).catch(() => { if (alive) setOutputFormat(null); });
+    void supportedOutputFormat(settings.outputHeight, metadata?.hasAudio ?? true).then((format) => { if (alive) setOutputFormat(format); }).catch(() => { if (alive) setOutputFormat(null); });
     return () => { alive = false; };
-  }, [settings.outputHeight]);
+  }, [settings.outputHeight, metadata?.hasAudio]);
 
   useEffect(() => () => {
     analysisController.current?.abort();
@@ -217,6 +237,7 @@ export default function Studio() {
 
   function commitProject(next: StudioProject) {
     projectRevision.current += 1;
+    activeProjectIdRef.current = next.id;
     setProject({ ...next, updatedAt: Date.now() });
   }
 
@@ -233,25 +254,33 @@ export default function Studio() {
   }
 
   function changeSettings(patch: Partial<StudioSettings>) {
+    const targetLanguageChanged = patch.targetLanguage !== undefined && patch.targetLanguage !== settings.targetLanguage;
     const next = { ...settings, ...patch };
     targetLanguageRef.current = next.targetLanguage;
+    if (targetLanguageChanged) translationController.current?.abort();
     invalidateClipOutputs();
     setSettings(next);
-    if (project) commitProject({ ...project, settings: next });
+    if (project) commitProject(targetLanguageChanged
+      ? { ...project, settings: next, translatedCues: [], translatedLanguage: "none" }
+      : { ...project, settings: next });
   }
 
   function goToStep(next: StepId) {
-    if (isAnalyzing || isTranslating || isTrackingFace || isExporting) return;
+    if (isBusy) return;
     setStep(next);
     if (project) commitProject({ ...project, step: next });
     setError("");
   }
 
-  async function activateSavedProject(saved: StudioProject, file: File, generation: number) {
+  async function activateSavedProject(saved: StudioProject, file: File, generation: number, expectedRevision: number) {
     setError("");
     try {
       const info = await inspectVideo(file);
       if (sourceGeneration.current !== generation) return;
+      if (projectRevision.current !== expectedRevision) {
+        setError("The active project changed while the source was being checked. It was not replaced; reopen the saved project after the current edit settles.");
+        return;
+      }
       if (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height)) {
         throw new Error("This video does not match the saved source metadata. Keep the project and choose the original recording.");
       }
@@ -264,6 +293,7 @@ export default function Studio() {
       };
       setSourceFile(file);
       setMetadata(info);
+      activeProjectIdRef.current = merged.id;
       setProject(merged);
       setSettings(merged.settings);
       targetLanguageRef.current = merged.settings.targetLanguage;
@@ -274,6 +304,7 @@ export default function Studio() {
       setPendingProject(null);
     } catch (cause) {
       if (sourceGeneration.current !== generation) return;
+      if (projectRevision.current !== expectedRevision) return;
       const recoveryProject = recoveryProjectAfterOpenFailure(saved);
       if (recoveryProject) setPendingProject(recoveryProject);
       setError(cause instanceof Error ? cause.message : "Could not reopen this source file.");
@@ -282,32 +313,50 @@ export default function Studio() {
 
   async function acceptFile(file: File) {
     if (isBusy) { setError("Finish or cancel the current operation before choosing another source."); return; }
-    sourceGeneration.current += 1;
-    projectRevision.current += 1;
-    const generation = sourceGeneration.current;
-    analysisController.current?.abort();
-    faceController.current?.abort();
-    translationController.current?.abort();
-    setError("");
-    setNotice("");
-    if (pendingProject) {
-      if (!matchesReselectedSource(pendingProject, file)) {
-        setError("This file does not match the saved source identity (name, size, or last modified time). Keep the project, then choose its original source file.");
+    const currentProject = project;
+    const startingRevision = projectRevision.current;
+    setIsProjectTransitioning(true);
+    try {
+      if (currentProject) {
+        await queueProjectSnapshotSave(currentProject, startingRevision, true);
+        if (!isCurrentSnapshot(currentProject.id, startingRevision)) {
+          setError("The active project changed while its local save was finishing. It was left untouched; choose the source again after the save settles.");
+          return;
+        }
+      }
+      sourceGeneration.current += 1;
+      projectRevision.current += 1;
+      const generation = sourceGeneration.current;
+      const revision = projectRevision.current;
+      analysisController.current?.abort();
+      faceController.current?.abort();
+      translationController.current?.abort();
+      setError("");
+      setNotice("");
+      if (pendingProject) {
+        if (!matchesReselectedSource(pendingProject, file)) {
+          setError("This file does not match the saved source identity (name, size, or last modified time). Keep the project, then choose its original source file.");
+          return;
+        }
+        await activateSavedProject(pendingProject, file, generation, revision);
         return;
       }
-      const saved = pendingProject;
-      await activateSavedProject(saved, file, generation);
-      return;
-    }
-    if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(file.name)) {
-      setError("Choose a supported video file such as MP4, MOV, WebM, or M4V.");
-      return;
-    }
-    try {
+      if (!file.type.startsWith("video/") && !/\.(mp4|mov|m4v|webm|mkv|avi|3gp)$/i.test(file.name)) {
+        setError("Choose a supported video file such as MP4, MOV, WebM, or M4V.");
+        return;
+      }
       const info = await inspectVideo(file);
       if (sourceGeneration.current !== generation) return;
+      if (projectRevision.current !== revision) {
+        setError("The active project changed while this video was being checked. It was not replaced; choose the video again after the current edit settles.");
+        return;
+      }
       const prefs = await loadSettings().catch(() => settings);
       if (sourceGeneration.current !== generation) return;
+      if (projectRevision.current !== revision) {
+        setError("The active project changed while settings were loading. It was not replaced; choose the video again after the current edit settles.");
+        return;
+      }
       const projectSettings = { ...prefs, smartFraming: false };
       const next = createProject(file, projectSettings);
       next.duration = info.duration;
@@ -318,6 +367,7 @@ export default function Studio() {
       setMetadata(info);
       setSettings(projectSettings);
       targetLanguageRef.current = projectSettings.targetLanguage;
+      activeProjectIdRef.current = next.id;
       setProject(next);
       setStep("upload");
       setCurrentTime(0);
@@ -330,10 +380,13 @@ export default function Studio() {
       setNotice(file.size >= LARGE_FILE_WARNING_BYTES
         ? "Video selected locally. This larger file may use substantial memory during analysis or export; close other heavy tabs and consider saving the source locally."
         : "Video selected. It has not been uploaded to the website.");
-      void saveProject(next).then(() => listProjects().then(setSavedProjects)).catch(() => setSaveState("error"));
+      void queueProjectSnapshotSave(next, revision).catch(() => {
+        if (isCurrentSnapshot(next.id, revision)) setSaveState("error");
+      });
     } catch (cause) {
-      if (sourceGeneration.current !== generation) return;
       setError(cause instanceof Error ? cause.message : "The browser could not read this video format.");
+    } finally {
+      setIsProjectTransitioning(false);
     }
   }
 
@@ -345,51 +398,94 @@ export default function Studio() {
 
   async function openSavedProject(saved: StudioProject) {
     if (isBusy) { setError("Finish or cancel the current operation before opening a saved project."); return; }
-    sourceGeneration.current += 1;
-    projectRevision.current += 1;
-    const generation = sourceGeneration.current;
-    analysisController.current?.abort();
-    faceController.current?.abort();
-    translationController.current?.abort();
+    const currentProject = project;
+    const startingRevision = projectRevision.current;
+    setIsProjectTransitioning(true);
     setError("");
-    const localFile = saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null;
-    if (sourceGeneration.current !== generation) return;
-    if (localFile) {
-      await activateSavedProject(saved, localFile, generation);
-      return;
+    try {
+      if (currentProject) await queueProjectSnapshotSave(currentProject, startingRevision, true);
+      if (!isCurrentSnapshot(currentProject?.id ?? "", startingRevision)) {
+        setError("The active project changed while its local save was finishing. It was left untouched; reopen the saved project after the save settles.");
+        return;
+      }
+      sourceGeneration.current += 1;
+      projectRevision.current += 1;
+      const generation = sourceGeneration.current;
+      const revision = projectRevision.current;
+      const projectToOpen = currentProject?.id === saved.id ? currentProject : saved;
+      analysisController.current?.abort();
+      faceController.current?.abort();
+      translationController.current?.abort();
+      const localFile = projectToOpen.sourceSavedInOpfs ? await loadSourceFromOpfs(projectToOpen.id) : null;
+      if (sourceGeneration.current !== generation || projectRevision.current !== revision) return;
+      if (localFile) {
+        await activateSavedProject(projectToOpen, localFile, generation, revision);
+        return;
+      }
+      setPendingProject(projectToOpen);
+      setNotice(`Choose the original source file for “${projectToOpen.name}” to continue editing. The saved transcript and settings remain on this device.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? `Could not finish the current local save: ${cause.message}` : "Could not finish the current local save.");
+    } finally {
+      setIsProjectTransitioning(false);
     }
-    setPendingProject(saved);
-    setNotice(`Choose the original source file for “${saved.name}” to continue editing. The saved transcript and settings remain on this device.`);
   }
 
   async function removeSavedProject(saved: StudioProject) {
+    if (isBusy) return;
     if (!window.confirm(`Delete the local project “${saved.name}” from this browser?`)) return;
+    const removesCurrentProject = project?.id === saved.id;
+    setIsProjectTransitioning(true);
+    if (removesCurrentProject) projectRevision.current += 1;
     try {
-      await deleteProject(saved);
+      await projectWriteQueue(() => deleteProject(saved));
+      sourceGeneration.current += 1;
+      analysisController.current?.abort();
+      faceController.current?.abort();
+      translationController.current?.abort();
       setSavedProjects(await listProjects());
+      if (shouldClearPendingProject(pendingProject, saved)) setPendingProject(null);
       if (project?.id === saved.id) {
+        projectRevision.current += 1;
         invalidateClipOutputs();
+        activeProjectIdRef.current = null;
         setProject(null); setSourceFile(null); setMetadata(null); setStep("upload"); setSelectedForBatch([]); setRenderStatuses({});
       }
     } catch (cause) {
       setError(cause instanceof Error ? `Could not delete the saved project: ${cause.message}` : "Could not delete the saved project. Try again.");
+      if (removesCurrentProject && project?.id === saved.id) commitProject(project);
+    } finally {
+      setIsProjectTransitioning(false);
     }
   }
 
   async function saveSourceLocally() {
-    if (!project || !sourceFile) return;
+    if (!project || !sourceFile || isSavingSource) return;
+    const projectId = project.id;
+    const generation = sourceGeneration.current;
+    const source = sourceFile;
     setError("");
+    setIsSavingSource(true);
     setNotice("Saving the original source in this browser’s private local storage…");
     try {
-      const saved = await saveSourceToOpfs(project.id, sourceFile);
+      const saved = await saveSourceToOpfs(projectId, source);
+      if (sourceGeneration.current !== generation) return;
       if (!saved) {
         setError("This browser could not store the source file locally. Project notes still auto-save; keep the original video file to reopen it.");
         return;
       }
-      commitProject({ ...project, sourceSavedInOpfs: true });
+      projectRevision.current += 1;
+      setProject((current) => {
+        const updated = markSourceSavedIfMatchingProject(current, projectId);
+        return updated ? { ...updated, updatedAt: Date.now() } : updated;
+      });
       setNotice("Source video saved on this device. It was not uploaded.");
     } catch (cause) {
-      setError(cause instanceof Error ? `The source could not be saved locally: ${cause.message}` : "The source could not be saved locally. Keep the original video file to reopen it.");
+      if (sourceGeneration.current === generation) {
+        setError(cause instanceof Error ? `The source could not be saved locally: ${cause.message}` : "The source could not be saved locally. Keep the original video file to reopen it.");
+      }
+    } finally {
+      setIsSavingSource(false);
     }
   }
 
@@ -629,11 +725,11 @@ export default function Studio() {
     const reportProgress = (progress: TranslationProgress) => { if (isCurrent()) setTranslationProgress(progress); };
     try {
       const inClip = sourceCues(project).filter((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end);
-      const translated = await translateCues(inClip, settings.targetLanguage, reportProgress, controller.signal);
+      const translated = await translateCues(inClip, targetLanguage, reportProgress, controller.signal);
       if (!isCurrent()) return;
       invalidateClipOutputs([activeClip.id]);
-      const keep = project.translatedCues.filter((cue) => !inClip.some((source) => cue.id === `translated-${settings.targetLanguage}-${source.id}`));
-      commitProject({ ...project, translatedCues: [...keep, ...translated].sort((a, b) => a.start - b.start), translatedLanguage: settings.targetLanguage });
+      const keep = project.translatedCues.filter((cue) => !inClip.some((source) => cue.id === `translated-${targetLanguage}-${source.id}`));
+      commitProject({ ...project, translatedCues: [...keep, ...translated].sort((a, b) => a.start - b.start), translatedLanguage: targetLanguage });
       setNotice(`Translated ${translated.length} caption lines on this device. Word-by-word timing is approximate; review the result before export.`);
     } catch (cause) {
       if (isCurrent() && !(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local translation failed.");
@@ -693,19 +789,24 @@ export default function Studio() {
 
   function chooseSubtitleForExport(clip: ClipSuggestion): CaptionCue[] {
     if (!project) return [];
-    const translatedForClip = project.translatedCues.some((cue) => cue.end >= clip.start && cue.start <= clip.end);
+    const translatedCues = translatedCuesForLanguage(project.translatedCues, settings.targetLanguage);
+    const translatedForClip = translatedCues.some((cue) => cue.end >= clip.start && cue.start <= clip.end);
     const cues = settings.targetLanguage !== "none" && project.translatedLanguage === settings.targetLanguage && translatedForClip
-      ? project.translatedCues
+      ? translatedCues
       : sourceCues(project);
     return settings.captionMode === "word" ? toWordCues(cues) : cues;
   }
 
-  function exportCuesForClip(clip: ClipSuggestion): CaptionCue[] {
+  function outputRangesForClip(clip: ClipSuggestion) {
     const duration = clip.end - clip.start;
-    const ranges = settings.silenceRemoval && project?.words.length
+    return settings.silenceRemoval && project
       ? buildClipSpeechRanges(project.words, clip.start, clip.end, settings.silenceThresholdSeconds, project.editedCues)
       : [{ start: 0, end: duration }];
-    return mapCaptionCuesToOutput(chooseSubtitleForExport(clip), clip.start, clip.end, ranges);
+  }
+
+  function exportCuesForClip(clip: ClipSuggestion): CaptionCue[] {
+    const ranges = outputRangesForClip(clip);
+    return mapCaptionCuesToOutput(chooseSubtitleForExport(clip), clip.start, clip.end, ranges, EXPORT_FRAME_RATE);
   }
 
   function exportCaptionFile(kind: "srt" | "vtt") {
@@ -911,7 +1012,7 @@ export default function Studio() {
                 <div className="studio-source-summary__file"><span><Film size={17} /></span><div><strong>{sourceFile.name}</strong><small>{formatBytes(sourceFile.size)} · {metadata.width} × {metadata.height} · {metadata.hasAudio ? "audio detected" : "no audio track"}</small></div></div>
                 <div className="studio-source-summary__duration"><Clock3 size={15} />{formatTime(metadata.duration)}</div>
                 <div className="studio-source-summary__actions">
-                  <button type="button" className="studio-text-button" onClick={saveProjectSourceToggle} disabled={project.sourceSavedInOpfs}><HardDrive size={14} />{project.sourceSavedInOpfs ? "Source saved on this device" : "Save source locally (optional)"}</button>
+                  <button type="button" className="studio-text-button" onClick={saveProjectSourceToggle} disabled={project.sourceSavedInOpfs || isBusy}><HardDrive size={14} />{isSavingSource ? "Saving source locally…" : project.sourceSavedInOpfs ? "Source saved on this device" : "Save source locally (optional)"}</button>
                   <span>{project.sourceSavedInOpfs ? "OPFS" : "Project notes auto-save; source file does not"}</span>
                 </div>
               </div>}
@@ -960,7 +1061,7 @@ export default function Studio() {
 
           {step === "edit" && project && sourceFile && previewUrl && <div className="studio-edit-layout">
             <div className="studio-edit-preview-column">
-              {activeClip ? <VideoPreview src={previewUrl} clip={activeClip} cues={currentCues} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} /> : <div className="studio-empty-state"><Scissors size={22} /><p>Select a suggestion or create a manual clip.</p><button type="button" className="studio-button studio-button--secondary" onClick={addManualClip}><Plus size={15} />Add manual clip</button></div>}
+              {activeClip ? <VideoPreview src={previewUrl} clip={activeClip} cues={exportCuesForClip(activeClip)} ranges={outputRangesForClip(activeClip)} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} /> : <div className="studio-empty-state"><Scissors size={22} /><p>Select a suggestion or create a manual clip.</p><button type="button" className="studio-button studio-button--secondary" onClick={addManualClip}><Plus size={15} />Add manual clip</button></div>}
               {activeClip && <div className="studio-cut-controls">
                 <div className="studio-cut-controls__heading"><span className="studio-mini-label">IN / OUT POINTS</span><button type="button" className="studio-text-button" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = activeClip.start; setCurrentTime(activeClip.start); void videoRef.current.play().catch(() => undefined); } }}><PlayIcon />Play this range</button></div>
                 <div className="studio-time-row"><label>Start <span>seconds</span><input disabled={isTrackingFace} type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={activeClip.start.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input disabled={isTrackingFace} type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={activeClip.end.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
@@ -1048,7 +1149,7 @@ export default function Studio() {
               <div className="studio-export-copy"><ShieldCheck size={17} /><p>Export is a local browser operation. The video, captions and model inputs are not sent to Frame &amp; Key’s lead form, cloud storage or a paid AI service.</p></div>
             </div>
             <aside className="studio-export-sidebar">
-              <VideoPreview src={previewUrl} clip={activeClip} cues={activeClip ? chooseSubtitleForExport(activeClip) : currentCues} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} />
+              <VideoPreview src={previewUrl} clip={activeClip} cues={activeClip ? exportCuesForClip(activeClip) : currentCues} ranges={activeClip ? outputRangesForClip(activeClip) : []} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} />
               <div className="studio-download-note"><h3>Long clip?</h3><p>On browsers with direct file saving, each export streams to the chosen file. Without that API, the editor limits in-memory exports and ZIP batches to protect device memory.</p><div><HardDrive size={15} />No server upload</div></div>
               <button type="button" className="studio-button studio-button--secondary studio-button--wide" onClick={() => goToStep("edit")}><ArrowLeft size={15} />Back to editing</button>
             </aside>

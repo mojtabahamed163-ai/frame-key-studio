@@ -311,14 +311,18 @@ export function speechKeepRanges(words: TranscriptWord[], start: number, end: nu
 export function buildClipSpeechRanges(words: TranscriptWord[], start: number, end: number, thresholdSeconds: number, manualCues: CaptionCue[] = []): SpeechRange[] {
   if (end <= start) return [];
   const duration = end - start;
-  const manualWords: TranscriptWord[] = manualCues
-    .filter((cue) => !cue.words.length && cue.text.trim() && cue.end > start && cue.start < end)
-    .map((cue) => ({ id: cue.id, text: cue.text, start: cue.start, end: cue.end }));
+  const manualWords: TranscriptWord[] = manualCues.flatMap((cue) => {
+    if (!cue.text.trim() || cue.end <= start || cue.start >= end) return [];
+    const timedWords = cue.words.filter((word) => word.end > word.start && word.end > start && word.start < end);
+    return timedWords.length ? timedWords : [{ id: cue.id, text: cue.text, start: cue.start, end: cue.end }];
+  });
   const ranges = speechKeepRanges([...words, ...manualWords], start, end, thresholdSeconds)
     .map((range) => ({ start: Math.max(0, Math.min(duration, range.start - start)), end: Math.max(0, Math.min(duration, range.end - start)) }))
     .filter((range) => range.end > range.start);
   return ranges.length ? ranges : [{ start: 0, end: duration }];
 }
+
+export const EXPORT_FRAME_RATE = 30;
 
 export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): number | null {
   let outputCursor = 0;
@@ -336,17 +340,21 @@ export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): numb
   return null;
 }
 
-function mapCaptionBoundaryToOutput(time: number, ranges: SpeechRange[]): number {
+function mapCaptionBoundaryToOutput(time: number, ranges: SpeechRange[], frameRate: number): number {
   let outputCursor = 0;
-  for (const range of ranges) {
+  for (let index = 0; index < ranges.length; index += 1) {
+    const range = ranges[index];
     if (time <= range.start) return outputCursor;
     if (time <= range.end) return outputCursor + (time - range.start);
     outputCursor += range.end - range.start;
+    if (index < ranges.length - 1 && Number.isFinite(frameRate) && frameRate > 0) {
+      outputCursor = Math.ceil(outputCursor * frameRate - 1e-9) / frameRate;
+    }
   }
   return outputCursor;
 }
 
-export function mapCaptionCuesToOutput(cues: CaptionCue[], clipStart: number, clipEnd: number, ranges: SpeechRange[]): CaptionCue[] {
+export function mapCaptionCuesToOutput(cues: CaptionCue[], clipStart: number, clipEnd: number, ranges: SpeechRange[], frameRate = 0): CaptionCue[] {
   if (clipEnd <= clipStart || !ranges.length) return [];
   const orderedRanges = [...ranges].filter((range) => range.end > range.start).sort((a, b) => a.start - b.start);
   if (!orderedRanges.length) return [];
@@ -355,12 +363,12 @@ export function mapCaptionCuesToOutput(cues: CaptionCue[], clipStart: number, cl
     const sourceStart = Math.max(clipStart, cue.start);
     const sourceEnd = Math.min(clipEnd, cue.end);
     if (sourceEnd <= sourceStart) return [];
-    const start = mapCaptionBoundaryToOutput(Math.max(0, sourceStart - clipStart), orderedRanges);
-    const end = mapCaptionBoundaryToOutput(Math.max(0, sourceEnd - clipStart), orderedRanges);
+    const start = mapCaptionBoundaryToOutput(Math.max(0, sourceStart - clipStart), orderedRanges, frameRate);
+    const end = mapCaptionBoundaryToOutput(Math.max(0, sourceEnd - clipStart), orderedRanges, frameRate);
     if (end <= start) return [];
     const words = cue.words.flatMap((word) => {
-      const wordStart = mapCaptionBoundaryToOutput(Math.max(0, word.start - clipStart), orderedRanges);
-      const wordEnd = mapCaptionBoundaryToOutput(Math.max(0, word.end - clipStart), orderedRanges);
+      const wordStart = mapCaptionBoundaryToOutput(Math.max(0, word.start - clipStart), orderedRanges, frameRate);
+      const wordEnd = mapCaptionBoundaryToOutput(Math.max(0, word.end - clipStart), orderedRanges, frameRate);
       return wordEnd > wordStart ? [{ ...word, start: wordStart, end: wordEnd }] : [];
     });
     return [{ ...cue, start, end, words }];

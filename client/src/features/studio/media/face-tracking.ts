@@ -34,6 +34,7 @@ export interface FaceTrackSample { time: number; face: FaceObservation | null }
 const FULL_FRAME_MAX_EDGE = 640;
 const ROI_SIZE = 512;
 const MAX_HOLD_SECONDS = 1.35;
+const REACQUISITION_SWEEP_INTERVAL_SECONDS = 1.5;
 export const MAX_FACE_ASSOCIATION_GAP_SECONDS = 3;
 const ROI_SWEEP_SCORE_THRESHOLD = 0.62;
 
@@ -41,6 +42,10 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
 
 export function shouldResetFaceAssociation(elapsedSeconds: number): boolean {
   return !Number.isFinite(elapsedSeconds) || elapsedSeconds > MAX_FACE_ASSOCIATION_GAP_SECONDS;
+}
+
+export function shouldRunReacquisitionSweep(hasFace: boolean, elapsedSinceFace: number, elapsedSinceSweep: number): boolean {
+  return !hasFace && elapsedSinceFace > MAX_HOLD_SECONDS && elapsedSinceSweep >= REACQUISITION_SWEEP_INTERVAL_SECONDS;
 }
 
 export function centerPortraitOnFace(
@@ -330,16 +335,21 @@ function sourceRoi(previous: FaceObservation | null, width: number, height: numb
   };
 }
 
-/** A bounded six-tile zoom sweep, used only after a miss/weak initial match, never on every frame. */
+/** A bounded full-frame grid sweep, used only after a miss/weak initial match. */
 export function buildRecoveryRois(width: number, height: number): SourceRect[] {
   if (width <= 0 || height <= 0) return [];
   const minDimension = Math.min(width, height);
   const side = Math.min(width, height, Math.max(2, minDimension * 0.38));
-  const xCenters = [0.18, 0.5, 0.82];
-  const yCenters = [0.22, 0.62];
-  const rects = yCenters.flatMap((cy) => xCenters.map((cx) => ({
-    x: clamp(cx * width - side / 2, 0, Math.max(0, width - side)),
-    y: clamp(cy * height - side / 2, 0, Math.max(0, height - side)),
+  const centersFor = (dimension: number) => {
+    const count = Math.max(1, Math.ceil((dimension - side) / side) + 1);
+    if (count === 1) return [dimension / 2];
+    return Array.from({ length: count }, (_, index) => side / 2 + index * (dimension - side) / (count - 1));
+  };
+  const xCenters = centersFor(width);
+  const yCenters = centersFor(height);
+  const rects = yCenters.flatMap((centerY) => xCenters.map((centerX) => ({
+    x: clamp(centerX - side / 2, 0, Math.max(0, width - side)),
+    y: clamp(centerY - side / 2, 0, Math.max(0, height - side)),
     width: side,
     height: side,
   })));
@@ -523,6 +533,7 @@ export async function trackLargestFace(
     const samples: FaceTrackSample[] = [];
     let lastReliable: FaceObservation | null = null;
     let lastReliableAbsoluteTime: number | null = null;
+    let lastRecoverySweepTime: number | null = null;
     for (let index = 0; index < times.length; index += 1) {
       if (signal.aborted) throw abortError();
       const absoluteTime = times[index];
@@ -538,18 +549,25 @@ export async function trackLargestFace(
         fullWidth,
         fullHeight,
       );
-      const elapsed = lastReliableAbsoluteTime == null ? 0 : Math.max(0, absoluteTime - lastReliableAbsoluteTime);
+      const elapsed = lastReliableAbsoluteTime == null
+        ? Math.max(0, absoluteTime - validStart)
+        : Math.max(0, absoluteTime - lastReliableAbsoluteTime);
       const association = shouldResetFaceAssociation(elapsed) ? null : lastReliable;
       let face = chooseFaceCandidate(fullFaces, video.videoWidth, video.videoHeight, association, elapsed);
 
       // A small distributed sweep can rescue a distant/off-centre face without scaling every full frame.
       // It runs only on an initial weak match or periodically after a long miss; ordinary misses use one local ROI.
       const needsInitialSweep = index < 2 && (!face || face.confidence < ROI_SWEEP_SCORE_THRESHOLD);
-      const needsReacquisitionSweep = !face && elapsed > MAX_HOLD_SECONDS && index % 8 === 0;
+      const needsReacquisitionSweep = shouldRunReacquisitionSweep(
+        Boolean(face),
+        elapsed,
+        lastRecoverySweepTime == null ? Number.POSITIVE_INFINITY : absoluteTime - lastRecoverySweepTime,
+      );
       if (!face || needsInitialSweep || needsReacquisitionSweep) {
         const rects = needsInitialSweep || needsReacquisitionSweep
           ? buildRecoveryRois(video.videoWidth, video.videoHeight)
           : [sourceRoi(lastReliable, video.videoWidth, video.videoHeight)];
+        if (needsInitialSweep || needsReacquisitionSweep) lastRecoverySweepTime = absoluteTime;
         let bestRecovery: FaceObservation | null = null;
         for (const rect of rects) {
           roiContext.clearRect(0, 0, ROI_SIZE, ROI_SIZE);
@@ -570,6 +588,7 @@ export async function trackLargestFace(
         samples.push({ time: absoluteTime - validStart, face: observation });
         lastReliable = observation;
         lastReliableAbsoluteTime = absoluteTime;
+        lastRecoverySweepTime = null;
       } else {
         samples.push({ time: absoluteTime - validStart, face: null });
         if (shouldResetFaceAssociation(elapsed)) lastReliable = null;
