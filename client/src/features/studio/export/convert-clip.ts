@@ -356,12 +356,12 @@ export async function exportClip(options: {
             const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
             sample.drawWithFit(context, { fit: "cover", crop });
           }
-          const absoluteTime = clip.start + localTime;
+          const sourceTime = clip.start + localTime;
           if (project.settings.showCaptions) {
-            const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
-            drawCaption(context, cue, absoluteTime, height, project.settings);
+            const cue = cues.find((item) => mappedTime >= item.start && mappedTime <= item.end);
+            drawCaption(context, cue, mappedTime, height, project.settings);
           }
-          drawTitleCard(context, clip, absoluteTime, project.settings);
+          drawTitleCard(context, clip, sourceTime, project.settings);
           drawLogo(context, logo, project.settings.logoPosition, width, height);
           const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
           return frame;

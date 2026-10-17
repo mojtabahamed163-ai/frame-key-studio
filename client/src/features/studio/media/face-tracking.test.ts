@@ -8,6 +8,8 @@ import {
   faceCenterAt,
   intersectionOverUnion,
   limitSubjectShift,
+  MAX_FACE_ASSOCIATION_GAP_SECONDS,
+  shouldResetFaceAssociation,
   smoothSubjectPosition,
   summarizeFaceTrack,
   type FaceObservation,
@@ -80,6 +82,12 @@ describe("local portrait face framing", () => {
 
     const rejected = chooseFaceCandidate([face(1300, 220, 360, 430)], 1920, 1080, previous, 0.5);
     expect(rejected).toBeNull();
+  });
+
+  it("drops stale identity association only after a long detection gap", () => {
+    expect(shouldResetFaceAssociation(MAX_FACE_ASSOCIATION_GAP_SECONDS)).toBe(false);
+    expect(shouldResetFaceAssociation(MAX_FACE_ASSOCIATION_GAP_SECONDS + 0.01)).toBe(true);
+    expect(shouldResetFaceAssociation(Number.POSITIVE_INFINITY)).toBe(true);
   });
 
   it("uses IoU to measure face-box continuity", () => {

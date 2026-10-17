@@ -34,9 +34,14 @@ export interface FaceTrackSample { time: number; face: FaceObservation | null }
 const FULL_FRAME_MAX_EDGE = 640;
 const ROI_SIZE = 512;
 const MAX_HOLD_SECONDS = 1.35;
+export const MAX_FACE_ASSOCIATION_GAP_SECONDS = 3;
 const ROI_SWEEP_SCORE_THRESHOLD = 0.62;
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+
+export function shouldResetFaceAssociation(elapsedSeconds: number): boolean {
+  return !Number.isFinite(elapsedSeconds) || elapsedSeconds > MAX_FACE_ASSOCIATION_GAP_SECONDS;
+}
 
 export function centerPortraitOnFace(
   box: FaceBox,
@@ -534,7 +539,8 @@ export async function trackLargestFace(
         fullHeight,
       );
       const elapsed = lastReliableAbsoluteTime == null ? 0 : Math.max(0, absoluteTime - lastReliableAbsoluteTime);
-      let face = chooseFaceCandidate(fullFaces, video.videoWidth, video.videoHeight, lastReliable, elapsed);
+      const association = shouldResetFaceAssociation(elapsed) ? null : lastReliable;
+      let face = chooseFaceCandidate(fullFaces, video.videoWidth, video.videoHeight, association, elapsed);
 
       // A small distributed sweep can rescue a distant/off-centre face without scaling every full frame.
       // It runs only on an initial weak match or periodically after a long miss; ordinary misses use one local ROI.
@@ -554,7 +560,7 @@ export async function trackLargestFace(
             ROI_SIZE,
             ROI_SIZE,
           );
-          const candidate = chooseFaceCandidate(roiFaces, video.videoWidth, video.videoHeight, lastReliable, elapsed);
+          const candidate = chooseFaceCandidate(roiFaces, video.videoWidth, video.videoHeight, association, elapsed);
           if (candidate && (!bestRecovery || candidate.confidence > bestRecovery.confidence)) bestRecovery = candidate;
         }
         if (bestRecovery && (!face || bestRecovery.confidence > face.confidence)) face = bestRecovery;
@@ -566,6 +572,7 @@ export async function trackLargestFace(
         lastReliableAbsoluteTime = absoluteTime;
       } else {
         samples.push({ time: absoluteTime - validStart, face: null });
+        if (shouldResetFaceAssociation(elapsed)) lastReliable = null;
       }
       onProgress({ completed: index + 1, total: times.length });
     }

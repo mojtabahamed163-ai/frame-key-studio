@@ -632,13 +632,17 @@ export default function Studio() {
     return settings.captionMode === "word" ? toWordCues(cues) : cues;
   }
 
+  function exportCuesForClip(clip: ClipSuggestion): CaptionCue[] {
+    const duration = clip.end - clip.start;
+    const ranges = settings.silenceRemoval && project?.words.length
+      ? buildClipSpeechRanges(project.words, clip.start, clip.end, settings.silenceThresholdSeconds, project.editedCues)
+      : [{ start: 0, end: duration }];
+    return mapCaptionCuesToOutput(chooseSubtitleForExport(clip), clip.start, clip.end, ranges);
+  }
+
   function exportCaptionFile(kind: "srt" | "vtt") {
     if (!activeClip) return;
-    const duration = activeClip.end - activeClip.start;
-    const ranges = project && settings.silenceRemoval && project.words.length
-      ? buildClipSpeechRanges(project.words, activeClip.start, activeClip.end, settings.silenceThresholdSeconds, project.editedCues)
-      : [{ start: 0, end: duration }];
-    const cues = mapCaptionCuesToOutput(chooseSubtitleForExport(activeClip), activeClip.start, activeClip.end, ranges);
+    const cues = exportCuesForClip(activeClip);
     const text = kind === "srt" ? exportSrt(cues) : exportVtt(cues);
     downloadText(text, `${safeFileStem(clipTitle(activeClip, 0))}.${kind}`, kind === "srt" ? "application/x-subrip;charset=utf-8" : "text/vtt;charset=utf-8");
   }
@@ -661,7 +665,7 @@ export default function Studio() {
       const outputName = `${platformTag}${safeFileStem(clipTitle(activeClip, 0))}.${extension}`;
       if (hasSavePicker) writable = await requestSaveTarget(outputName, outputFormat);
       const converted = await exportClip({
-        file: sourceFile, project, clip: activeClip, cues: chooseSubtitleForExport(activeClip),
+        file: sourceFile, project, clip: activeClip, cues: exportCuesForClip(activeClip),
         faceKeyframes, format: outputFormat, writable, signal: controller.signal,
         onProgress: (progress) => {
           setExportProgress(progress);
@@ -715,7 +719,7 @@ export default function Studio() {
         const outputName = `${platformTag}${safeFileStem(clipTitle(clip, index))}.${extension}`;
         const converted = await exportClip({
           file: sourceFile, project, clip,
-          cues: chooseSubtitleForExport(clip),
+          cues: exportCuesForClip(clip),
           faceKeyframes: project.faceKeyframesByClip[clip.id] ?? [],
           format: outputFormat,
           signal: controller.signal,
