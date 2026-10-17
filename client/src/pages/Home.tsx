@@ -13,8 +13,8 @@ import {
   X,
 } from "lucide-react";
 
-const HERO_IMAGE = "/manus-storage/async-images/ictVHberbVqusFMWm17N8U/image-1.webp";
-const BRAND_MARK = "/manus-storage/async-images/ictVHberbVqusFMWm17N8U/image-2.webp";
+const HERO_IMAGE = "/property-interior.svg";
+const BRAND_MARK = "/framekey-platform-mark.svg";
 
 type FormState = "idle" | "sending" | "success" | "error";
 

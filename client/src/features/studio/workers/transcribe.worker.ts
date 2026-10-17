@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { pipeline } from "@huggingface/transformers";
 
-const MODEL_ID = "Xenova/whisper-base";
+const MODEL_ID = "Xenova/whisper-tiny";
 type AsrResult = { text?: string; chunks?: Array<{ text?: string; timestamp?: [number | null, number | null]; score?: number }> };
 type AsrPipeline = (audio: Float32Array, options: Record<string, unknown>) => Promise<AsrResult>;
 let transcriber: AsrPipeline | null = null;
