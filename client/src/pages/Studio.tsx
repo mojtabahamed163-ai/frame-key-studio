@@ -64,6 +64,7 @@ function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
   else if (codes.includes("timestamp-outside-audio-window")) messages.push("Whisper returned word timestamps outside an audio window; those out-of-range words were excluded.");
   if (codes.includes("suspicious-word-duration")) messages.push("Whisper returned a word with an implausibly long timestamp; it was excluded, so review the nearby transcript.");
   if (codes.includes("audio-activity-after-last-word")) messages.push("Sustained audio activity continues after the last accepted word. Listen to the final seconds for a missing phrase.");
+  if (codes.includes("inferred-word-end")) messages.push("A final word arrived without an end timestamp; its end was bounded by the next word or the audio window. Review the last caption.");
   if (codes.includes("conflicting-overlap-words")) messages.push("Overlapping audio windows disagreed on words; review the transcript around those boundaries.");
   return messages.join(" ");
 }

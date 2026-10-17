@@ -33,6 +33,19 @@ export const MAX_WORD_DURATION_SECONDS = 1.5;
 export const TRANSCRIPTION_CHUNK_SECONDS = 24;
 export const TRANSCRIPTION_OVERLAP_SECONDS = 4;
 
+export function inferMissingWordEnds(words: RawWord[], windowEnd: number): { words: RawWord[]; inferred: boolean } {
+  let inferred = false;
+  const normalized = words.map((word, index) => {
+    if (word.start == null || word.end != null || !Number.isFinite(word.start)) return word;
+    const nextStart = words.slice(index + 1).find((next) => next.start != null && Number.isFinite(next.start) && next.start > word.start!)?.start;
+    const candidateEnd = nextStart ?? windowEnd;
+    if (!Number.isFinite(candidateEnd) || candidateEnd <= word.start) return word;
+    inferred = true;
+    return { ...word, end: candidateEnd };
+  });
+  return { words: normalized, inferred };
+}
+
 export function wordBelongsToChunkWindow(start: number, end: number, chunkStartSeconds: number, chunkNumber: number): boolean {
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
   const ownedFrom = chunkNumber === 0 ? chunkStartSeconds : chunkStartSeconds + TRANSCRIPTION_OVERLAP_SECONDS;
@@ -255,7 +268,9 @@ export async function transcribeVideo(
       lastAudioWindowStart = chunkStartSeconds;
       lastAudioWindowEnd = windowEnd;
       const audio = resampleLinear(mono, sampleRate);
-      const replies = await recognize(worker, audio, chunkStartSeconds, language, signal, onProgress);
+      const response = await recognize(worker, audio, chunkStartSeconds, language, signal, onProgress);
+      const { words: replies, inferred } = inferMissingWordEnds(response, windowEnd);
+      if (inferred) warningCodes.add("inferred-word-end");
       for (const item of replies) {
         if (!item.text.trim() || item.start == null || item.end == null || !Number.isFinite(item.start) || !Number.isFinite(item.end)) continue;
         const outsideWindow = item.start < chunkStartSeconds - 0.05 || item.end > windowEnd + 0.05;

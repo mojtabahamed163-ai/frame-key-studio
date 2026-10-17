@@ -3,6 +3,7 @@ import {
   classifyChunkWord,
   fitWordToAudioWindow,
   hasSustainedAudioActivityAfterLastWord,
+  inferMissingWordEnds,
   isDuplicateOverlapWord,
   TRANSCRIPTION_CHUNK_SECONDS,
   TRANSCRIPTION_OVERLAP_SECONDS,
@@ -54,5 +55,17 @@ describe("local Whisper audio-window boundaries", () => {
     samples.fill(0.08, 1_030);
     expect(hasSustainedAudioActivityAfterLastWord(samples, 1_000, 0, 0.85, 1.4)).toBe(true);
     expect(hasSustainedAudioActivityAfterLastWord(new Float32Array(1_400), 1_000, 0, 0.85, 1.4)).toBe(false);
+  });
+
+  it("bounds a missing terminal word end without inventing text or exceeding the audio window", () => {
+    const result = inferMissingWordEnds([
+      { text: "final", start: 8.4, end: null },
+      { text: "phrase", start: 8.9, end: null },
+    ], 9.2);
+    expect(result.inferred).toBe(true);
+    expect(result.words.map(({ text, start, end }) => ({ text, start, end }))).toEqual([
+      { text: "final", start: 8.4, end: 8.9 },
+      { text: "phrase", start: 8.9, end: 9.2 },
+    ]);
   });
 });

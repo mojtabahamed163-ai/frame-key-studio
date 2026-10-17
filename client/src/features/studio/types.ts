@@ -10,6 +10,7 @@ export type TranscriptionWarningCode =
   | "timestamp-outside-audio-window"
   | "timestamp-outside-source-tail"
   | "audio-activity-after-last-word"
+  | "inferred-word-end"
   | "suspicious-word-duration"
   | "conflicting-overlap-words";
 
