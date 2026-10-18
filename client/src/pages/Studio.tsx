@@ -15,11 +15,11 @@ import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analy
 import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, MAX_SOURCE_DIMENSION_PX, MAX_SOURCE_DURATION_SECONDS, MAX_SOURCE_FILE_BYTES, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
+import { portraitCropQuality } from "@/features/studio/media/framing";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type TranscriptionWarningCode, type VideoMetadata } from "@/features/studio/types";
-import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
-import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
+import type { ExportProgress, ExportResult, FileWritable, OutputFormat } from "@/features/studio/export/convert-clip";
 import "@/features/studio/studio.css";
 
 const LANGUAGE_OPTIONS = [
@@ -77,7 +77,8 @@ function needsSourceTailReview(codes: TranscriptionWarningCode[]): boolean {
 }
 
 function estimateOutputBytes(clips: ClipSuggestion[], settings: StudioSettings): number {
-  const bitrate = videoBitrateForHeight(settings.outputHeight) + 128_000;
+  const videoBitrate = settings.outputHeight === 1920 ? 12_000_000 : 6_000_000;
+  const bitrate = videoBitrate + 128_000;
   return clips.reduce((sum, clip) => sum + Math.max(0, clip.end - clip.start) * bitrate / 8 + 2_500_000, 0);
 }
 
@@ -219,7 +220,10 @@ export default function Studio() {
 
   useEffect(() => {
     let alive = true;
-    void supportedOutputFormat(settings.outputHeight, metadata?.hasAudio ?? true).then((format) => { if (alive) setOutputFormat(format); }).catch(() => { if (alive) setOutputFormat(null); });
+    void import("@/features/studio/export/convert-clip")
+      .then(({ supportedOutputFormat }) => supportedOutputFormat(settings.outputHeight, metadata?.hasAudio ?? true))
+      .then((format) => { if (alive) setOutputFormat(format); })
+      .catch(() => { if (alive) setOutputFormat(null); });
     return () => { alive = false; };
   }, [settings.outputHeight, metadata?.hasAudio]);
 
@@ -845,9 +849,10 @@ export default function Studio() {
       setRetryAction(null);
     } catch (cause) {
       if (isCurrent()) {
+        changeSettings({ smartFraming: false });
         setRetryAction("face");
         if (cause instanceof DOMException && cause.name === "AbortError") setNotice("Face tracking cancelled. Manual framing is still available and your last saved framing was kept.");
-        else setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
+        else setError(`${cause instanceof Error ? cause.message : "Face tracking could not run on this device."} Manual framing is active instead.`);
       }
     } finally {
       if (isOperationOwner(controller, faceController.current)) {
@@ -901,8 +906,9 @@ export default function Studio() {
     setRenderErrors((current) => ({ ...current, [activeClip.id]: "" }));
     const controller = new AbortController();
     exportController.current = controller;
-    let writable: Awaited<ReturnType<typeof requestSaveTarget>> = null;
+    let writable: FileWritable | null = null;
     try {
+      const { requestSaveTarget, exportClip } = await import("@/features/studio/export/convert-clip");
       const extension = outputFormat === "mp4" ? "mp4" : "webm";
       const platformTag = settings.outputPlatform === "generic" ? "" : `${settings.outputPlatform}-`;
       const outputName = `${platformTag}${safeFileStem(clipTitle(activeClip, 0))}.${extension}`;
@@ -958,6 +964,7 @@ export default function Studio() {
     const usedFilenames = new Set<string>();
     let currentClipId: string | null = null;
     try {
+      const { exportClip } = await import("@/features/studio/export/convert-clip");
       for (let index = 0; index < clips.length; index += 1) {
         const clip = clips[index];
         currentClipId = clip.id;

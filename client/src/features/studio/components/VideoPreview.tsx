@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { objectPositionForPortraitCrop } from "../media/framing";
-import { mapSourceTimeToExportOutput, resolveOutputPreviewSourceTime } from "../export/convert-clip";
+import { mapSourceTimeToExportOutput, resolveOutputPreviewSourceTime } from "../export/timing";
 import type { CaptionCue, ClipSuggestion, SpeechRange, StudioSettings } from "../types";
 
 export function VideoPreview({

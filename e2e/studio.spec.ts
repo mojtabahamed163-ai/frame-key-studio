@@ -35,13 +35,6 @@ test.beforeEach(async ({ page }) => {
     }
   });
   await page.goto("/studio");
-  await page.evaluate(() => new Promise<void>((resolve) => {
-    const request = indexedDB.deleteDatabase("framekey-studio-local");
-    request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-    request.onblocked = () => resolve();
-  }));
-  await page.reload();
   await expect(page).toHaveTitle(/Local Video Studio/);
 });
 
@@ -96,8 +89,42 @@ test("accepts a real local video, creates a manual 9:16 cut, exports it, and pro
 
   const probe = ffprobeJson(output);
   expect(probe.streams?.some((stream) => stream.codec_type === "video")).toBe(true);
+  expect(probe.streams?.some((stream) => stream.codec_type === "audio")).toBe(true);
   expect(Number(probe.format?.duration ?? 0)).toBeGreaterThan(0);
   expect(readFileSync(output).byteLength).toBeGreaterThan(0);
+});
+
+test("accepts the exact 1080p and 30-minute source limit and exports a portrait cut", async ({ page }) => {
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixture("max-supported-1080p-30m.mp4"));
+
+  await expect(page.getByText("max-supported-1080p-30m.mp4", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/1920 × 1080/)).toBeVisible();
+  await expect(page.getByText("30:00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/audio detected/)).toBeVisible();
+
+  await page.getByRole("button", { name: /Skip analysis and set a cut manually/i }).click();
+  await page.locator('input[accept*=".srt"]').setInputFiles(fixture("captions.srt"));
+  await expect(page.getByText(/Imported 2 caption lines locally/)).toBeVisible({ timeout: 15_000 });
+  await page.locator('input[accept*="image/svg+xml"]').setInputFiles(path.join(ROOT, "client", "public", "framekey-platform-mark.svg"));
+  await page.getByLabel("Brand name").fill("FrameKey E2E");
+  await page.getByLabel("Export resolution").selectOption("1280");
+  await page.getByRole("button", { name: /^Export$/ }).last().click();
+  const exportButton = page.getByRole("button", { name: "Export selected clip" });
+  await expect(exportButton).toBeEnabled({ timeout: 30_000 });
+  await exportButton.click();
+  await expect(page.getByText(/Export is ready|Export saved/)).toBeVisible({ timeout: 120_000 });
+
+  const saveButton = page.getByRole("button", { name: "Save file" });
+  const downloadPromise = page.waitForEvent("download");
+  await saveButton.click();
+  const download = await downloadPromise;
+  const output = path.join(OUTPUTS, `max-${download.suggestedFilename()}`);
+  await download.saveAs(output);
+  const probe = ffprobeJson(output);
+  expect(probe.streams?.some((stream) => stream.codec_type === "video")).toBe(true);
+  expect(probe.streams?.some((stream) => stream.codec_type === "audio")).toBe(true);
+  expect(Number(probe.format?.duration ?? 0)).toBeGreaterThan(0);
 });
 
 test("keeps the saved project shell after a reload when the source was not stored", async ({ page }) => {
@@ -113,6 +140,35 @@ test("keeps the saved project shell after a reload when the source was not store
   await savedProject.click();
   await expect(page.getByText(/Source not stored\. Select the original video matching/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "Choose the original source" }).first()).toBeVisible();
+});
+
+test("renders two local clips and downloads a non-empty ZIP batch", async ({ page }) => {
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixture("valid-horizontal.mp4"));
+  await expect(page.getByText("valid-horizontal.mp4", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /Skip analysis and set a cut manually/i }).click();
+  await expect(page.getByText("Shape the final cut.")).toBeVisible();
+  await page.getByRole("button", { name: "Moments", exact: true }).click();
+  await page.getByRole("button", { name: "Add manual clip" }).click();
+  await page.getByRole("button", { name: "Moments", exact: true }).click();
+  await expect(page.getByText(/2 SUGGESTIONS/)).toBeVisible();
+  await page.getByRole("button", { name: /Refine selected clip/ }).click();
+  await page.getByRole("button", { name: /^Export$/ }).last().click();
+
+  const batchButton = page.getByRole("button", { name: "Render selected + ZIP" });
+  await expect(batchButton).toBeEnabled({ timeout: 30_000 });
+  await batchButton.click();
+  await expect(page.getByText(/Finished 2 clips/)).toBeVisible({ timeout: 120_000 });
+  const zipButton = page.getByRole("button", { name: /Download all as ZIP/ });
+  const downloadPromise = page.waitForEvent("download");
+  await zipButton.click();
+  const download = await downloadPromise;
+  const output = path.join(OUTPUTS, download.suggestedFilename());
+  await download.saveAs(output);
+  const zip = readFileSync(output);
+  expect(zip.byteLength).toBeGreaterThan(0);
+  const listing = execFileSync("unzip", ["-l", output], { encoding: "utf8" });
+  expect((listing.match(/\.webm|\.mp4/g) ?? []).length).toBeGreaterThanOrEqual(2);
 });
 
 test("cancels local speech analysis without losing the selected source", async ({ page }) => {

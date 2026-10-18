@@ -14,6 +14,13 @@ type FileSystemWritableHandle = FileSystemFileHandle & {
   createWritable: () => Promise<FileSystemWritableFileStream>;
 };
 
+function localStorageError(cause: unknown, fallback: string): Error {
+  const name = cause instanceof DOMException ? cause.name : "";
+  if (name === "QuotaExceededError") return new Error("Local project storage is full. Remove an old project or free browser storage, then try saving again.");
+  if (name === "SecurityError") return new Error("This browser or private browsing mode does not allow local project storage. Keep this tab open or use a browser profile with IndexedDB enabled.");
+  return cause instanceof Error ? cause : new Error(fallback);
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) {
@@ -27,21 +34,28 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PREFERENCES)) db.createObjectStore(PREFERENCES, { keyPath: "key" });
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Could not open local project storage."));
+    request.onerror = () => reject(localStorageError(request.error, "Could not open local project storage."));
   });
 }
 
 async function requestValue<T>(storeName: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await openDatabase();
   return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(storeName, mode);
+    let transaction: IDBTransaction;
+    try {
+      transaction = db.transaction(storeName, mode);
+    } catch (cause) {
+      db.close();
+      reject(localStorageError(cause, "Local project storage is unavailable."));
+      return;
+    }
     let result: T;
     let settled = false;
     const fail = (cause: DOMException | Error | null | undefined) => {
       if (settled) return;
       settled = true;
       db.close();
-      reject(cause ?? new Error("Local save failed."));
+      reject(localStorageError(cause, "Local save failed."));
     };
     let request: IDBRequest<T>;
     try {

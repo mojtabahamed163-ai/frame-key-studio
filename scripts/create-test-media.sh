@@ -21,8 +21,27 @@ ffmpeg -hide_banner -loglevel error -y \
   -an -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
   "$OUT_DIR/too-long.mp4"
 
+if [[ ! -f "$OUT_DIR/max-supported-1080p-30m.mp4" ]]; then
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=0x203a31:s=1920x1080:r=1:d=1800" \
+    -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=1800" \
+    -shortest -c:v libx264 -preset ultrafast -crf 35 -pix_fmt yuv420p \
+    -c:a aac -b:a 48k -movflags +faststart \
+    "$OUT_DIR/max-supported-1080p-30m.mp4"
+fi
+
 printf 'not a video\n' > "$OUT_DIR/not-a-video.txt"
+cat > "$OUT_DIR/captions.srt" <<'SRT'
+1
+00:00:00,000 --> 00:00:02,000
+Frame and key local test.
+
+2
+00:00:02,000 --> 00:00:04,000
+Portrait export with captions.
+SRT
 
 ffprobe -v error -show_entries format=duration -show_streams -of json "$OUT_DIR/valid-horizontal.mp4" > "$OUT_DIR/valid-horizontal.ffprobe.json"
 ffprobe -v error -show_entries format=duration -show_streams -of json "$OUT_DIR/too-large-dimension.mp4" > "$OUT_DIR/too-large-dimension.ffprobe.json"
 ffprobe -v error -show_entries format=duration -show_streams -of json "$OUT_DIR/too-long.mp4" > "$OUT_DIR/too-long.ffprobe.json"
+ffprobe -v error -show_entries format=duration -show_streams -of json "$OUT_DIR/max-supported-1080p-30m.mp4" > "$OUT_DIR/max-supported-1080p-30m.ffprobe.json"

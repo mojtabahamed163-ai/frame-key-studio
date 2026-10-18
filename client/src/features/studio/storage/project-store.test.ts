@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { saveProject } from "./project-store";
+import { listProjects, saveProject } from "./project-store";
 import type { StudioProject } from "../types";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -45,5 +45,24 @@ describe("local project transactions", () => {
     await saving;
     expect(completed).toBe(true);
     expect(database.close).toHaveBeenCalledOnce();
+  });
+
+  it("returns a clear message when browser storage is full", async () => {
+    const indexedDb = { open: vi.fn(() => {
+      const request: { result?: unknown; onsuccess?: (() => void) | null; onerror?: (() => void) | null } = {};
+      queueMicrotask(() => {
+        request.result = { transaction: () => { throw new DOMException("quota", "QuotaExceededError"); }, close: vi.fn() };
+        request.onsuccess?.();
+      });
+      return request;
+    }) };
+    vi.stubGlobal("window", { indexedDB: indexedDb });
+    vi.stubGlobal("indexedDB", indexedDb);
+    await expect(listProjects()).rejects.toThrow(/storage is full/i);
+  });
+
+  it("returns a clear message when IndexedDB is unavailable", async () => {
+    vi.stubGlobal("window", {});
+    await expect(listProjects()).rejects.toThrow(/does not provide local project storage/i);
   });
 });
