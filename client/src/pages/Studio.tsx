@@ -38,6 +38,12 @@ function formatTime(seconds: number): string {
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
 }
 
+function formatInputSeconds(seconds: number, upperBound: number): string {
+  const safe = Math.max(0, Math.min(Number.isFinite(seconds) ? seconds : 0, upperBound));
+  const rounded = Number(safe.toFixed(1));
+  return (rounded <= upperBound ? rounded : safe).toFixed(rounded <= upperBound ? 1 : 3);
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -832,7 +838,7 @@ export default function Studio() {
               {activeClip ? <VideoPreview src={previewUrl} clip={activeClip} cues={currentCues} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} /> : <div className="studio-empty-state"><Scissors size={22} /><p>Select a suggestion or create a manual clip.</p><button type="button" className="studio-button studio-button--secondary" onClick={addManualClip}><Plus size={15} />Add manual clip</button></div>}
               {activeClip && <div className="studio-cut-controls">
                 <div className="studio-cut-controls__heading"><span className="studio-mini-label">IN / OUT POINTS</span><button type="button" className="studio-text-button" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = activeClip.start; setCurrentTime(activeClip.start); void videoRef.current.play().catch(() => undefined); } }}><PlayIcon />Play this range</button></div>
-                <div className="studio-time-row"><label>Start <span>seconds</span><input type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={activeClip.start.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={activeClip.end.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
+                <div className="studio-time-row"><label>Start <span>seconds</span><input type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={formatInputSeconds(activeClip.start, activeClip.end - 0.25)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={formatInputSeconds(activeClip.end, project.duration)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
                 <div className="studio-cut-range"><input aria-label="Adjust clip start" type="range" min="0" max={Math.max(0, activeClip.end - 0.5)} step="0.1" value={activeClip.start} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /><input aria-label="Adjust clip end" type="range" min={activeClip.start + 0.5} max={project.duration} step="0.1" value={activeClip.end} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></div>
               </div>}
               {activeClip && <section className="studio-panel studio-captions-panel">
