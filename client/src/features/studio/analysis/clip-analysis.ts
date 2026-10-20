@@ -33,6 +33,20 @@ const TOPIC_TAGS: Array<[RegExp, string]> = [
 
 export const WORD_CUE_PREFIX = "word-cue:";
 
+export interface ClipBounds { start: number; end: number }
+
+/** Keep an editable clip inside the actual source duration with a usable minimum length. */
+export function normalizeClipBounds(start: number, end: number, sourceDuration: number, minimumDuration = 0.25): ClipBounds | null {
+  if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) return null;
+  const minimum = Math.min(Math.max(0.05, minimumDuration), sourceDuration);
+  const latestStart = Math.max(0, sourceDuration - minimum);
+  const safeStart = Number.isFinite(start) ? start : 0;
+  const safeEnd = Number.isFinite(end) ? end : sourceDuration;
+  const normalizedStart = Math.max(0, Math.min(safeStart, latestStart));
+  const normalizedEnd = Math.max(normalizedStart + minimum, safeEnd);
+  return { start: normalizedStart, end: Math.min(sourceDuration, normalizedEnd) };
+}
+
 export function joinTranscriptWords(words: TranscriptWord[]): string {
   return words.reduce((text, word, index) => {
     const token = word.text.trim();
@@ -306,7 +320,11 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDurati
     }
   }
 
-  const ranked = candidates.sort((a, b) => b.score - a.score || a.start - b.start || a.end - b.end);
+  const ranked = candidates
+    .sort((a, b) => b.score - a.score || a.start - b.start || a.end - b.end)
+    .filter((candidate, index, all) => index === all.findIndex((other) => (
+      other.start === candidate.start && other.end === candidate.end && other.transcript === candidate.transcript
+    )));
   const selected: ClipSuggestion[] = [];
   for (const candidate of ranked) {
     const overlaps = selected.some((current) => {
