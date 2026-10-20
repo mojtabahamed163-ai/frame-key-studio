@@ -13,7 +13,7 @@ import {
   VideoSample,
   WebMOutputFormat,
 } from "mediabunny";
-import { mapSourceTimeToOutput, speechKeepRanges } from "../analysis/clip-analysis";
+import { mapSourceTimeToOutput, normalizeClipBounds, speechKeepRanges } from "../analysis/clip-analysis";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetadata } from "../types";
 
@@ -243,7 +243,10 @@ export async function exportClip(options: {
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
 }): Promise<ExportResult> {
-  const { file, project, clip, cues, faceKeyframes, format, writable, signal, onProgress } = options;
+  const { file, project, cues, faceKeyframes, format, writable, signal, onProgress } = options;
+  const bounds = normalizeClipBounds(options.clip.start, options.clip.end, project.duration);
+  if (!bounds) throw new Error("The source duration is unavailable. Choose the video again before exporting.");
+  const clip = { ...options.clip, ...bounds };
   const debug = (phase: string, detail?: unknown) => {
     console.log("[Frame & Key export]", phase, detail ?? "");
   };

@@ -8,7 +8,7 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
-import { buildCaptionCues, joinTranscriptWords, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { buildCaptionCues, joinTranscriptWords, normalizeClipBounds, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
@@ -381,11 +381,14 @@ export default function Studio() {
 
   function addManualClip() {
     if (!project) return;
-    const start = Math.max(0, Math.min(currentTime, Math.max(0, project.duration - 1)));
+    const bounds = normalizeClipBounds(currentTime, currentTime + Math.min(30, Math.max(1, project.duration - currentTime)), project.duration, 1);
+    if (!bounds) {
+      setError("The source duration is unavailable. Choose the video again before adding a manual clip.");
+      return;
+    }
     const clip: ClipSuggestion = {
       id: `manual-${Date.now()}`,
-      start,
-      end: Math.min(project.duration, start + Math.min(30, Math.max(1, project.duration - start))),
+      ...bounds,
       score: 0,
       reasons: ["Manual cut: choose the in/out points yourself."],
       transcript: "",
@@ -399,7 +402,7 @@ export default function Studio() {
     commitProject({ ...project, clips: [...project.clips, clip], selectedClipId: clip.id, step: "edit" });
     setSelectedForBatch((current) => [...current, clip.id]);
     setStep("edit");
-    setCurrentTime(start);
+    setCurrentTime(bounds.start);
   }
 
   function chooseClip(clip: ClipSuggestion, nextStep: StepId = "edit") {
@@ -422,9 +425,11 @@ export default function Studio() {
       if (patch.selectedHook !== undefined && !patch.selectedHook.trim()) next.selectedHook = undefined;
       if (patch.start !== undefined || patch.end !== undefined || hookStart !== undefined) {
         changedBoundaries = true;
-        next.start = Math.max(0, Math.min(next.start, project.duration - 0.1));
-        next.end = Math.min(project.duration, Math.max(next.start + 0.25, next.end));
-        newStart = next.start;
+        const bounds = normalizeClipBounds(next.start, next.end, project.duration);
+        if (!bounds) return next;
+        next.start = bounds.start;
+        next.end = bounds.end;
+        newStart = bounds.start;
       }
       if (patch.start !== undefined && hookStart === undefined) {
         const matchingHook = clip.hookStartOptions?.findIndex((start) => Math.abs(start - next.start) < 0.06) ?? -1;
