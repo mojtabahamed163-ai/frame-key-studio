@@ -23,7 +23,10 @@ export function applyCaptionCuePatch(
   if (patch.text !== undefined) {
     next.words = [];
   } else if (timingChanged) {
-    const delta = patch.start !== undefined ? next.start - cue.start : next.end - cue.end;
+    // Moving the in-point moves the timed words with the cue. Changing only
+    // the out-point must preserve their source timestamps and merely clamp
+    // words that now fall outside the edited cue.
+    const delta = patch.start !== undefined ? next.start - cue.start : 0;
     next.words = cue.words.flatMap((word) => {
       const start = Math.max(next.start, word.start + delta);
       const end = Math.min(next.end, word.end + delta);

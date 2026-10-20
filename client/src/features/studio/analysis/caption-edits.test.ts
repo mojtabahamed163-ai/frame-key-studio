@@ -28,6 +28,13 @@ describe("caption cue editing", () => {
     expect(updated.words.every((word) => word.end - word.start >= 0.04)).toBe(true);
   });
 
+  it("does not shift timed words when only the cue end is extended", () => {
+    const updated = applyCaptionCuePatch(cue, { end: 7 }, 3, 7);
+    expect(updated.start).toBe(4);
+    expect(updated.end).toBe(7);
+    expect(updated.words).toEqual(cue.words);
+  });
+
   it("returns only translated cues for the selected target language", () => {
     const french = { ...cue, id: "translated-fr-cue-1", text: "Bonjour" };
     const german = { ...cue, id: "translated-de-cue-1", text: "Guten Tag" };
