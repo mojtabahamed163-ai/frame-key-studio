@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, mapSourceTimeToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import { buildCaptionCues, mapSourceTimeToOutput, normalizeClipBounds, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
 import type { TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
@@ -7,6 +7,13 @@ function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
 }
 
 describe("local transcript analysis", () => {
+  it("normalizes invalid clip boundaries inside the source duration", () => {
+    expect(normalizeClipBounds(-4, 99, 12)).toEqual({ start: 0, end: 12 });
+    expect(normalizeClipBounds(11.9, 11.91, 12)).toEqual({ start: 11.75, end: 12 });
+    expect(normalizeClipBounds(Number.NaN, Number.NaN, 12)).toEqual({ start: 0, end: 12 });
+    expect(normalizeClipBounds(0, 1, 0)).toBeNull();
+  });
+
   it("groups punctuation into complete source sentences", () => {
     const words = wordsFrom(["The", "first", "number", "is", "twenty.", "A", "second", "point", "matters!"]);
     const sentences = sentenceGroups(words);
