@@ -36,6 +36,9 @@ export function videoBitrateForHeight(height: number): number {
 }
 
 export async function supportedOutputFormat(height: number): Promise<OutputFormat | null> {
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const isWebKit = /AppleWebKit/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg)/i.test(userAgent);
+  if (isWebKit) return null;
   if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis)) return null;
   const width = Math.round(height * 9 / 16);
   const videoSupported = async (codec: string) => {
