@@ -15,7 +15,7 @@ import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
-import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
+import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs, sourceMatchesProject } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type TranscriptionWarningCode, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";

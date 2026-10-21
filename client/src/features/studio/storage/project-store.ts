@@ -4,6 +4,7 @@ const DB_NAME = "framekey-studio-local";
 const DB_VERSION = 1;
 const PROJECTS = "projects";
 const PREFERENCES = "preferences";
+let writeQueue: Promise<void> = Promise.resolve();
 
 type BrowserStorageManager = StorageManager & {
   getDirectory?: () => Promise<FileSystemDirectoryHandle>;
@@ -13,6 +14,16 @@ type BrowserStorageManager = StorageManager & {
 type FileSystemWritableHandle = FileSystemFileHandle & {
   createWritable: () => Promise<FileSystemWritableFileStream>;
 };
+
+export function sourceMatchesProject(
+  file: File,
+  project: Pick<StudioProject, "sourceFileName" | "sourceSize" | "sourceLastModified">,
+  restoredFromOpfs = false,
+): boolean {
+  return (restoredFromOpfs || file.name === project.sourceFileName)
+    && file.size === project.sourceSize
+    && (restoredFromOpfs || !project.sourceLastModified || file.lastModified === project.sourceLastModified);
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -36,16 +47,31 @@ async function requestValue<T>(storeName: string, mode: IDBTransactionMode, acti
   return new Promise<T>((resolve, reject) => {
     const transaction = db.transaction(storeName, mode);
     const request = action(transaction.objectStore(storeName));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Local save failed."));
-    transaction.onabort = () => reject(transaction.error ?? new Error("Local save was interrupted."));
-    transaction.oncomplete = () => db.close();
+    let result: T;
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      db.close();
+      callback();
+    };
+    request.onsuccess = () => { result = request.result; };
+    request.onerror = () => finish(() => reject(request.error ?? new Error("Local save failed.")));
+    transaction.onerror = () => finish(() => reject(transaction.error ?? new Error("Local save failed.")));
+    transaction.onabort = () => finish(() => reject(transaction.error ?? new Error("Local save was interrupted.")));
+    transaction.oncomplete = () => finish(() => resolve(result));
   });
+}
+
+function enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const next = writeQueue.then(operation, operation);
+  writeQueue = next.then(() => undefined, () => undefined);
+  return next;
 }
 
 export async function saveProject(project: StudioProject): Promise<void> {
   const updated = { ...project, updatedAt: Date.now() };
-  await requestValue<IDBValidKey>(PROJECTS, "readwrite", (store) => store.put(updated));
+  await enqueueWrite(() => requestValue<IDBValidKey>(PROJECTS, "readwrite", (store) => store.put(updated)));
 }
 
 export async function loadProject(id: string): Promise<StudioProject | null> {
@@ -58,7 +84,7 @@ export async function listProjects(): Promise<StudioProject[]> {
 }
 
 export async function saveSettings(settings: StudioSettings): Promise<void> {
-  await requestValue<IDBValidKey>(PREFERENCES, "readwrite", (store) => store.put({ key: "defaults", value: settings }));
+  await enqueueWrite(() => requestValue<IDBValidKey>(PREFERENCES, "readwrite", (store) => store.put({ key: "defaults", value: settings })));
 }
 
 export async function loadSettings(): Promise<StudioSettings> {
@@ -96,16 +122,19 @@ export function createProject(sourceFile: File, settings: StudioSettings): Studi
 export async function saveSourceToOpfs(projectId: string, file: File): Promise<boolean> {
   const storage = navigator.storage as BrowserStorageManager;
   if (!storage.getDirectory) return false;
+  let writable: FileSystemWritableFileStream | null = null;
   try {
     await storage.persist?.();
     const root = await storage.getDirectory();
     const folder = await root.getDirectoryHandle("framekey-studio", { create: true });
     const handle = await folder.getFileHandle(`${projectId}.source`, { create: true }) as FileSystemWritableHandle;
-    const writable = await handle.createWritable();
+    writable = await handle.createWritable();
     await writable.write(file);
     await writable.close();
+    writable = null;
     return true;
   } catch {
+    await writable?.abort().catch(() => undefined);
     return false;
   }
 }

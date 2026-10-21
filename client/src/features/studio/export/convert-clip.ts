@@ -57,17 +57,27 @@ export async function supportedOutputFormat(height: number): Promise<OutputForma
   return null;
 }
 
-export async function requestSaveTarget(name: string, format: OutputFormat): Promise<FileWritable | null> {
+export async function requestSaveTarget(name: string, format: OutputFormat, signal?: AbortSignal): Promise<FileWritable | null> {
   const picker = (window as SavePickerWindow).showSaveFilePicker;
   if (!picker) return null;
+  let settled = false;
   const pickerRequest = picker({
     suggestedName: name,
     types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
-  }).then((handle) => handle.createWritable());
+  }).then((handle) => handle.createWritable()).then(async (writable) => {
+    if (settled || signal?.aborted) {
+      await writable.abort(new DOMException("Save cancelled.", "AbortError")).catch(() => undefined);
+      return null;
+    }
+    return writable;
+  });
   // Some embedded browsers expose the API but do not surface its native dialog.
   // Do not block encoding forever in that case; the caller will use BufferTarget.
   const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));
-  return Promise.race([pickerRequest, timeout]);
+  const aborted = signal ? new Promise<null>((resolve) => signal.addEventListener("abort", () => resolve(null), { once: true })) : new Promise<null>(() => undefined);
+  const result = await Promise.race([pickerRequest, timeout, aborted]);
+  settled = true;
+  return result;
 }
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
@@ -182,7 +192,7 @@ function drawLogo(ctx: CanvasRenderingContext2D, logo: ImageBitmap | null, posit
   ctx.restore();
 }
 
-async function measurePeak(file: File, start: number, end: number): Promise<number> {
+async function measurePeak(file: File, start: number, end: number, signal: AbortSignal): Promise<number> {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
     const track = await input.getPrimaryAudioTrack();
@@ -190,6 +200,7 @@ async function measurePeak(file: File, start: number, end: number): Promise<numb
     const sink = new AudioSampleSink(track);
     let peak = 0;
     for await (const sample of sink.samples(start, end)) {
+      if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
       try {
         const buffer = sample.toAudioBuffer();
         for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
@@ -239,7 +250,7 @@ export async function exportClip(options: {
   const ranges = remapRanges(project, clip);
   debug("start", { format, fileBytes: file.size, clipStart: clip.start, clipEnd: clip.end, ranges });
   debug("measurePeak:start", { enabled: project.settings.peakNormalize });
-  const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end) : 0;
+  const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end, signal) : 0;
   debug("measurePeak:done", { peak });
   const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
   const logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
@@ -278,6 +289,7 @@ export async function exportClip(options: {
   });
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   let conversion: Conversion | null = null;
+  let cancelConversion: (() => void) | null = null;
 
   try {
     onProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
@@ -351,6 +363,8 @@ export async function exportClip(options: {
         },
       },
     });
+    cancelConversion = () => { void conversion?.cancel(); };
+    signal.addEventListener("abort", cancelConversion, { once: true });
     debug("Conversion.init:done", { isValid: conversion.isValid, discardedTracks: conversion.discardedTracks.map((item) => item.reason) });
     if (!conversion.isValid) {
       const discarded = conversion.discardedTracks.map((item) => item.reason).filter(Boolean).join("; ");
@@ -359,8 +373,11 @@ export async function exportClip(options: {
     conversion.onProgress = (progress) => onProgress({ progress, phase: "encoding", detail: `${Math.round(progress * 100)}% — encoding stays on this device` });
     if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
     debug("Conversion.execute:start");
-    await conversion.execute();
+    await conversion.execute({ pauseSignal: signal });
     debug("Conversion.execute:done", { outputState: output.state });
+    // Mediabunny may finish after a processor has observed an abort. Never expose
+    // that partial/finalized file as a successful export.
+    if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
     if (target instanceof BufferTarget) {
       const buffer = target.buffer;
       if (!buffer) throw new Error("The export completed without a file buffer.");
@@ -368,6 +385,7 @@ export async function exportClip(options: {
       bytesWritten = buffer.byteLength;
       debug("BufferTarget:done", { bytesWritten });
     }
+    if (bytesWritten <= 0) throw new Error("The export completed without writing a media file.");
     onProgress({ progress: 1, phase: "complete", detail: "Your file is ready on this device" });
     return {
       filename: `${(clip.selectedTitle || project.name).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 56)}-clip-${Math.round(clip.start)}.${isWebm(format) ? "webm" : "mp4"}`,
@@ -384,6 +402,7 @@ export async function exportClip(options: {
     if (/memory|buffer|allocation/i.test(message)) throw new Error("This browser ran out of memory. Try 720p, a shorter clip, or saving one clip at a time.");
     throw new Error(message);
   } finally {
+    if (cancelConversion) signal.removeEventListener("abort", cancelConversion);
     if (logo) logo.close();
     input.dispose();
   }
