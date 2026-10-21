@@ -89,6 +89,18 @@ function createWorker(): Worker {
   return new Worker(new URL("../workers/transcribe.worker.ts", import.meta.url), { type: "module", name: "framekey-local-whisper" });
 }
 
+export function nextSampleWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal): Promise<IteratorResult<T>> {
+  if (signal.aborted) return Promise.reject(new DOMException("Analysis cancelled.", "AbortError"));
+  let onAbort: (() => void) | null = null;
+  const abort = new Promise<IteratorResult<T>>((_, reject) => {
+    onAbort = () => reject(new DOMException("Analysis cancelled.", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  return Promise.race([iterator.next(), abort]).finally(() => {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  });
+}
+
 function recognize(worker: Worker, audio: Float32Array, offsetSeconds: number, language: string, signal: AbortSignal, onProgress: (progress: AnalysisProgress) => void): Promise<RawWord[]> {
   const jobId = `asr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
@@ -140,6 +152,7 @@ export async function transcribeVideo(
     let chunkStart = 0;
     let chunkNumber = 0;
     let newFramesSinceChunk = 0;
+    const sampleIterator = sink.samples()[Symbol.asyncIterator]();
 
     const sendChunk = async (chunkStartSeconds: number) => {
       if (!sampleCount) return;
@@ -167,8 +180,10 @@ export async function transcribeVideo(
     };
 
     onProgress({ stage: "audio", progress: 0, detail: "Reading audio locally in short windows" });
-    for await (const sample of sink.samples()) {
-      if (signal.aborted) throw new DOMException("Analysis cancelled.", "AbortError");
+    while (true) {
+      const next = await nextSampleWithAbort(sampleIterator, signal);
+      if (next.done) break;
+      const sample = next.value;
       try {
         if (chunkNumber === 0 && sampleCount === 0) chunkStart = sample.timestamp;
         chunks.push(downmixToMono(sample));
