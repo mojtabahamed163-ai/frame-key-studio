@@ -182,6 +182,27 @@ function drawLogo(ctx: CanvasRenderingContext2D, logo: ImageBitmap | null, posit
   ctx.restore();
 }
 
+async function loadLogoBitmap(file: Blob | undefined): Promise<ImageBitmap | null> {
+  if (!file) return null;
+  try {
+    if (file.type === "image/svg+xml") {
+      const url = URL.createObjectURL(file);
+      try {
+        const image = new Image();
+        image.decoding = "async";
+        image.src = url;
+        await image.decode();
+        return await createImageBitmap(image);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    return await createImageBitmap(file);
+  } catch {
+    return null;
+  }
+}
+
 async function measurePeak(file: File, start: number, end: number): Promise<number> {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
@@ -242,7 +263,7 @@ export async function exportClip(options: {
   const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end) : 0;
   debug("measurePeak:done", { peak });
   const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
-  const logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
+  const logo = await loadLogoBitmap(project.settings.logo);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;

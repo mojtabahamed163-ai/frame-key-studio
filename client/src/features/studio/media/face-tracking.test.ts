@@ -173,6 +173,18 @@ describe("local portrait face framing", () => {
     expect(frames[3].confidence).toBe(0);
   });
 
+  it("reacquires the same subject after a temporary out-of-frame interval", () => {
+    const frames = buildFaceKeyframes([
+      { time: 0, face: observation(0, 600) },
+      { time: 0.5, face: null },
+      { time: 1.0, face: null },
+      { time: 1.25, face: observation(1.25, 630) },
+    ], 1920, 1080, 0.78, 0.52);
+    expect(frames.map((frame) => frame.state)).toEqual(["detected", "held", "held", "detected"]);
+    expect(frames[3].confidence).toBeGreaterThan(0);
+    expect(Math.abs(frames[3].x - frames[0].x)).toBeLessThan(0.04);
+  });
+
   it("interpolates the held-to-manual fallback over the final sample interval", () => {
     const frames = buildFaceKeyframes([
       { time: 0, face: observation(0, 600) },
