@@ -7,7 +7,8 @@ export interface TranscriptWord {
 }
 
 export interface SpeechRange { start: number; end: number }
-export interface CropKeyframe { time: number; x: number; y: number; confidence: number; framingSafe?: boolean }
+export type FaceTrackingState = "detected" | "held" | "manual";
+export interface CropKeyframe { time: number; x: number; y: number; confidence: number; framingSafe?: boolean; state?: FaceTrackingState }
 
 export interface CaptionCue {
   id: string;
