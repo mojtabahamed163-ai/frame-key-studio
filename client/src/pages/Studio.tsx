@@ -12,7 +12,7 @@ import { buildCaptionCues, joinTranscriptWords, suggestClips, toWordCues, WORD_C
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
-import { trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
+import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
 import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type VideoMetadata } from "@/features/studio/types";
@@ -111,6 +111,9 @@ export default function Studio() {
 
   const activeClip = useMemo(() => project?.clips.find((clip) => clip.id === project.selectedClipId) ?? null, [project]);
   const faceKeyframes = useMemo(() => activeClip && project ? project.faceKeyframesByClip[activeClip.id] ?? [] : [], [activeClip, project]);
+  const faceTrackSummary = useMemo(() => activeClip
+    ? summarizeFaceTrack(faceKeyframes, activeClip.end - activeClip.start)
+    : null, [activeClip, faceKeyframes]);
   const currentCues = useMemo(() => {
     if (!project) return [];
     const translatedForClip = activeClip ? project.translatedCues.some((cue) => cue.end >= activeClip.start && cue.start <= activeClip.end) : project.translatedCues.length > 0;
@@ -545,7 +548,8 @@ export default function Studio() {
     const controller = new AbortController();
     faceController.current = controller;
     try {
-      const keyframes = await trackLargestFace(sourceFile, activeClip.start, activeClip.end, controller.signal, setFaceProgress);
+      const keyframes = await trackLargestFace(sourceFile, activeClip.start, activeClip.end, controller.signal, setFaceProgress, { x: settings.manualCropX, y: settings.manualCropY });
+      const summary = summarizeFaceTrack(keyframes, activeClip.end - activeClip.start);
       invalidateClipOutputs([activeClip.id]);
       commitProject({
         ...project,
@@ -553,9 +557,9 @@ export default function Studio() {
         faceKeyframesByClip: { ...project.faceKeyframesByClip, [activeClip.id]: keyframes },
       });
       setSettings({ ...settings, smartFraming: true });
-      setNotice(keyframes.some((frame) => frame.framingSafe === false)
-        ? `Tracked the largest face in ${keyframes.length} local sample points. At some points the full detected face could not fit inside the 9:16 frame; review or adjust manually.`
-        : `Tracked the largest face in ${keyframes.length} local sample points and constrained the crop to its detected bounds where possible. Preview before exporting.`);
+      setNotice(summary.detectedCount < summary.sampleCount
+        ? `Face detection returned at ${summary.detectedCount}/${summary.sampleCount} sampled times; held ${summary.heldCount} and used manual framing at ${summary.manualCount}. Longest detection gap: ${summary.longestDetectionGapSeconds.toFixed(1)} s. Review the crop—the tracker does not identify who is speaking.`
+        : `Face detection returned at all ${summary.sampleCount} sampled times. The tracker does not identify who is speaking; review the crop before export.`);
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Face tracking could not run on this device.");
     } finally {
@@ -859,10 +863,11 @@ export default function Studio() {
                 {settings.silenceRemoval && <label className="studio-field studio-range-field">Remove a gap longer than {settings.silenceThresholdSeconds.toFixed(1)} s<input type="range" min="0.7" max="2.5" step="0.1" value={settings.silenceThresholdSeconds} onChange={(event) => changeSettings({ silenceThresholdSeconds: Number(event.target.value) })} /><small>Review before export; pauses are inferred from transcription timestamps.</small></label>}
                 <label className="studio-toggle-row"><span><strong>Peak-normalize audio</strong><small>Sets the measured peak near −1 dBFS; not LUFS mastering.</small></span><input type="checkbox" checked={settings.peakNormalize} onChange={(event) => changeSettings({ peakNormalize: event.target.checked })} /></label>
                 <label className="studio-toggle-row"><span><strong>Overlay the selected title</strong><small>Brand-colored title card for the first 2.8 seconds of the clip.</small></span><input type="checkbox" checked={settings.showTitleCard} onChange={(event) => changeSettings({ showTitleCard: event.target.checked })} /></label>
-                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow the largest face</strong><small>Optional local face detection on the selected clip.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip || isTrackingFace}>{isTrackingFace ? "Scanning…" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
+                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow a face</strong><small>Local face detection; speaker identity is not inferred.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip || isTrackingFace}>{isTrackingFace ? "Scanning…" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
                 {isTrackingFace && faceProgress && <ProgressCard label={`Checking frame ${faceProgress.completed} of ${faceProgress.total}`} progress={faceProgress.completed / Math.max(1, faceProgress.total)} />}
                 {settings.smartFraming && faceKeyframes.length === 0 && <p className="studio-inline-warning"><AlertTriangle size={14} />No saved face track for this clip. Run face detection or turn auto framing off.</p>}
-                {settings.smartFraming && faceKeyframes.some((frame) => frame.framingSafe === false) && <p className="studio-inline-warning"><AlertTriangle size={14} />The detected face box does not fit in the 9:16 crop at every sampled moment. Review the preview and adjust manual framing if needed.</p>}
+                {settings.smartFraming && faceTrackSummary && faceTrackSummary.detectedCount < faceTrackSummary.sampleCount && <p className="studio-inline-warning"><AlertTriangle size={14} />Face detections: {faceTrackSummary.detectedCount}/{faceTrackSummary.sampleCount} sample points · held {faceTrackSummary.heldCount} · manual fallback {faceTrackSummary.manualCount}. Review the crop; face detection does not identify the speaker.</p>}
+                {settings.smartFraming && faceKeyframes.some((frame) => frame.framingSafe === false) && <p className="studio-inline-warning"><AlertTriangle size={14} />The detected face does not fit the 9:16 crop at every sampled moment. Review the preview; for an extreme close-up, try “Show full video · studio background.”</p>}
                 <label className="studio-field">Portrait framing mode<select value={settings.framingMode} onChange={(event) => changeSettings({ framingMode: event.target.value as StudioSettings["framingMode"] })}><option value="fill">Fill portrait frame · crop sides</option><option value="full">Show full video · studio background</option></select><small>{settings.framingMode === "full" ? "Keeps the complete landscape frame visible without stretching, inside a dark 9:16 studio canvas; preview uses a softened video background." : "Fills 9:16 by cropping the sides. Use face tracking or the manual slider to keep the subject visible."}</small></label>
                 <label className="studio-field studio-range-field">Manual horizontal framing<input type="range" min="0" max="1" step="0.01" value={settings.manualCropX} onChange={(event) => changeSettings({ manualCropX: Number(event.target.value) })} /><small>Use this if automatic face framing is unavailable or off-center.</small></label>
                 <label className="studio-field">Export resolution<select value={settings.outputHeight} onChange={(event) => changeSettings({ outputHeight: Number(event.target.value) as StudioSettings["outputHeight"] })}><option value={1920}>1080 × 1920 · higher quality</option><option value={1280}>720 × 1280 · lighter files</option></select></label>
