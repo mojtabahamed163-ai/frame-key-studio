@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { cropForPortrait, portraitCropQuality, videoBitrateForHeight } from "./convert-clip";
+import { cropForPortrait, portraitCropQuality, requestSaveTarget, supportedOutputFormat, videoBitrateForHeight } from "./convert-clip";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
     expect(videoBitrateForHeight(1280)).toBe(6_000_000);
     expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+  });
+});
+
+describe("browser capability fallbacks", () => {
+  it("reports no export format when WebCodecs is unavailable", async () => {
+    const originalVideoEncoder = (globalThis as { VideoEncoder?: unknown }).VideoEncoder;
+    const originalAudioEncoder = (globalThis as { AudioEncoder?: unknown }).AudioEncoder;
+    try {
+      delete (globalThis as { VideoEncoder?: unknown }).VideoEncoder;
+      delete (globalThis as { AudioEncoder?: unknown }).AudioEncoder;
+      await expect(supportedOutputFormat(1280)).resolves.toBeNull();
+    } finally {
+      if (originalVideoEncoder) (globalThis as { VideoEncoder?: unknown }).VideoEncoder = originalVideoEncoder;
+      if (originalAudioEncoder) (globalThis as { AudioEncoder?: unknown }).AudioEncoder = originalAudioEncoder;
+    }
+  });
+
+  it("falls back when an exposed save picker rejects", async () => {
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = {
+      setTimeout,
+      showSaveFilePicker: async () => { throw new Error("native picker unavailable"); },
+    };
+    try {
+      await expect(requestSaveTarget("clip.webm", "webm-vp9")).resolves.toBeNull();
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+      else (globalThis as { window?: unknown }).window = originalWindow;
+    }
   });
 });
 
