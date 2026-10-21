@@ -350,6 +350,7 @@ export default function Studio() {
     analysisController.current = controller;
     try {
       const words = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
+      if (controller.signal.aborted || analysisController.current !== controller) return;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
@@ -372,15 +373,26 @@ export default function Studio() {
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
     } finally {
-      setIsAnalyzing(false);
-      analysisController.current = null;
+      if (analysisController.current === controller) {
+        analysisController.current = null;
+        setIsAnalyzing(false);
+        setAnalysisProgress(null);
+      }
     }
   }
 
-  function cancelAnalysis() { analysisController.current?.abort(); }
+  function cancelAnalysis() {
+    const controller = analysisController.current;
+    if (!controller) return;
+    analysisController.current = null;
+    controller.abort();
+    setIsAnalyzing(false);
+    setAnalysisProgress(null);
+  }
 
   function addManualClip() {
     if (!project) return;
+    cancelAnalysis();
     const bounds = normalizeClipBounds(currentTime, currentTime + Math.min(30, Math.max(1, project.duration - currentTime)), project.duration, 1);
     if (!bounds) {
       setError("The source duration is unavailable. Choose the video again before adding a manual clip.");
