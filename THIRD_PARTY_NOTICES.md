@@ -8,6 +8,7 @@
 - **Transformers.js 4.3.1 — Apache-2.0.** [مستودع Transformers.js](https://github.com/huggingface/transformers.js).
 - **TensorFlow.js وFace Detection — Apache-2.0.** تشمل الإصدارات المستخدمة `@tensorflow-models/face-detection` 1.0.3 وحزم `@tensorflow/tfjs-*` 4.22.0. [مصدر TensorFlow.js Models](https://github.com/tensorflow/tfjs-models).
 - **fflate 0.8.3 — MIT.** [مستودع fflate](https://github.com/101arrowz/fflate).
+- **Google Fonts (DM Sans وPlayfair Display).** تُطلب الخطوط من `fonts.googleapis.com` و`fonts.gstatic.com` عند تحميل الواجهة؛ لا تُستخدم لرفع ملفات المستخدم أو إرسال نصوص الاستوديو. راجع [شروط Google Fonts](https://developers.google.com/fonts/faq) قبل إعادة التوزيع أو الاستضافة الذاتية.
 
 ## النماذج
 
