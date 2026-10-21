@@ -42,9 +42,9 @@
 
 - `pnpm check`: ناجح بعد إصلاح تحميل SVG.
 - `pnpm vitest run client/src/features/studio/media/face-tracking.test.ts client/src/features/studio/export/convert-clip.test.ts`: **28 اختبارًا ناجحًا**.
-- `pnpm test -- --run`: يُعاد تشغيله في الفحص النهائي قبل الالتزام.
-- `pnpm build`: يُعاد تشغيله في الفحص النهائي قبل الالتزام.
-- `git diff --check`: مطلوب أن يبقى بلا أخطاء قبل الالتزام.
+- `pnpm test -- --run`: **10 ملفات، 74 اختبارًا ناجحًا**.
+- `pnpm build`: ناجح؛ ظهرت تحذيرات Vite المعتادة عن chunk كبير ووسم `type="module"` الموجود مسبقًا، دون فشل بناء.
+- `git diff --check`: بلا أخطاء تنسيق.
 - `/manus-routes.json`: يعرض `/` و`/studio`، وطلب `/studio` يعيد HTTP 200.
 
 ## القيود المعلنة بصدق
