@@ -3,7 +3,7 @@
 Date: 2026-10-21  
 Candidate branch: `acceptance/release-candidate-2026-10-21`  
 Base under review: `origin/main` at `5474a3e`  
-Release-candidate commit: `5cb22487a47be3cc551444b10e29917ca020ef08`.
+Release-candidate commit: `c006aeaf01b62d1022237a25f5f05bad2a50d065`.
 
 ## Candidate establishment
 
