@@ -37,6 +37,33 @@ export function joinTranscriptWords(words: TranscriptWord[]): string {
   }, "").replace(/\s+/g, " ").trim();
 }
 
+export function refreshClipTranscriptsFromCues(
+  clips: ClipSuggestion[],
+  cues: CaptionCue[],
+  affectedClipIds: string[],
+  sourceWords: TranscriptWord[],
+  previousCue?: CaptionCue,
+  textChanged = false,
+): ClipSuggestion[] {
+  const affected = new Set(affectedClipIds);
+  if (!affected.size) return clips;
+  return clips.map((clip) => {
+    if (!affected.has(clip.id) || !clip.id.startsWith("clip-")) return clip;
+    if (textChanged && previousCue) {
+      const updatedCue = cues.find((cue) => cue.id === previousCue.id);
+      if (!updatedCue || !previousCue.text.trim() || !clip.transcript.includes(previousCue.text)) return clip;
+      const transcript = clip.transcript.replace(previousCue.text, updatedCue.text).replace(/\s+/g, " ").trim();
+      return { ...clip, transcript };
+    }
+    if (previousCue && !previousCue.words.length) return clip;
+    const words = sourceWords.length
+      ? sourceWords.filter((word) => word.end > clip.start && word.start < clip.end)
+      : cues.flatMap((cue) => cue.words.filter((word) => word.end > clip.start && word.start < clip.end));
+    if (!words.length) return sourceWords.length ? { ...clip, transcript: "" } : clip;
+    return { ...clip, transcript: joinTranscriptWords(words.sort((a, b) => a.start - b.start)) };
+  });
+}
+
 function joinWords(words: TranscriptWord[]): string { return joinTranscriptWords(words); }
 
 export function toWordCues(cues: CaptionCue[]): CaptionCue[] {
@@ -314,6 +341,7 @@ export function buildClipSpeechRanges(words: TranscriptWord[], start: number, en
   const manualWords: TranscriptWord[] = manualCues.flatMap((cue) => {
     if (!cue.text.trim() || cue.end <= start || cue.start >= end) return [];
     const timedWords = cue.words.filter((word) => word.end > word.start && word.end > start && word.start < end);
+    if (words.length && cue.id.startsWith("cue-") && !timedWords.length) return [];
     return timedWords.length ? timedWords : [{ id: cue.id, text: cue.text, start: cue.start, end: cue.end }];
   });
   const ranges = speechKeepRanges([...words, ...manualWords], start, end, thresholdSeconds)

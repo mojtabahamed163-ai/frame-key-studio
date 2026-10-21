@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, buildClipSpeechRanges, mapCaptionCuesToOutput, mapSourceTimeToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
-import type { TranscriptWord } from "../types";
+import { buildCaptionCues, buildClipSpeechRanges, mapCaptionCuesToOutput, mapSourceTimeToOutput, refreshClipTranscriptsFromCues, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import type { CaptionCue, ClipSuggestion, TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
   return texts.map((text, index) => ({ id: `${offset + index}`, text, start: offset + index * 0.55, end: offset + index * 0.55 + 0.38 }));
@@ -26,6 +26,88 @@ describe("local transcript analysis", () => {
         expect(original).toContain(normalized);
       }
     }
+  });
+
+  it("refreshes only affected generated clip transcripts from corrected source captions", () => {
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "The wrong market.",
+      hookOptions: ["The wrong market."], hookStartOptions: [4], selectedHook: "The wrong market.",
+      titleOptions: ["Market update"], selectedTitle: "My chosen title", description: "Generated copy",
+      editedDescription: "My edited copy", hashtags: ["property"], callsToAction: ["Follow for more"],
+    };
+    const unrelated = { ...clip, id: "clip-20000-22000", start: 20, end: 22, transcript: "Unrelated words." };
+    const manual = { ...clip, id: "manual-1", transcript: "Manual note." };
+    const cue: CaptionCue = {
+      id: "cue-1", start: 4, end: 6, text: "The corrected market.", words: [
+        { id: "w1", text: "The", start: 4.1, end: 4.3 },
+        { id: "w2", text: "corrected", start: 4.4, end: 4.8 },
+        { id: "w3", text: "market.", start: 5, end: 5.3 },
+      ],
+    };
+
+    const refreshed = refreshClipTranscriptsFromCues([clip, unrelated, manual], [cue], [clip.id], cue.words);
+
+    expect(refreshed[0]).toMatchObject({ transcript: "The corrected market.", selectedTitle: "My chosen title", editedDescription: "My edited copy" });
+    expect(refreshed[1]).toBe(unrelated);
+    expect(refreshed[2]).toBe(manual);
+  });
+
+  it("uses a corrected text-only cue in an affected clip when the cue fits wholly inside it", () => {
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "The wrong market.",
+      hookOptions: [], titleOptions: [], description: "", hashtags: [], callsToAction: [],
+    };
+    const previousCue: CaptionCue = { id: "cue-1", start: 4, end: 6, text: "The wrong market.", words: [] };
+    const correctedCue: CaptionCue = { ...previousCue, text: "The corrected market." };
+
+    const [refreshed] = refreshClipTranscriptsFromCues([clip], [correctedCue], [clip.id], [], previousCue, true);
+
+    expect(refreshed.transcript).toBe("The corrected market.");
+  });
+
+  it("keeps source transcript words that are not represented by a partial imported caption", () => {
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "The full source sentence remains here.",
+      hookOptions: [], titleOptions: [], description: "", hashtags: [], callsToAction: [],
+    };
+    const sourceWords = [
+      { id: "w1", text: "The", start: 4.1, end: 4.3 },
+      { id: "w2", text: "full", start: 4.4, end: 4.7 },
+      { id: "w3", text: "source", start: 4.8, end: 5.1 },
+      { id: "w4", text: "sentence", start: 5.2, end: 5.5 },
+      { id: "w5", text: "remains", start: 5.6, end: 5.9 },
+      { id: "w6", text: "here.", start: 5.95, end: 6 },
+    ];
+    const partialImportedCue: CaptionCue = { id: "imported-cue-1", start: 4.1, end: 4.7, text: "The corrected", words: [] };
+
+    const [refreshed] = refreshClipTranscriptsFromCues([clip], [partialImportedCue], [clip.id], sourceWords);
+
+    expect(refreshed.transcript).toBe("The full source sentence remains here.");
+  });
+
+  it("clears a generated clip transcript when no timed source words remain in its range", () => {
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "A word moved out.",
+      hookOptions: [], titleOptions: [], description: "", hashtags: [], callsToAction: [],
+    };
+    const sourceWords = [{ id: "w1", text: "Moved", start: 6.2, end: 6.5 }];
+
+    const [refreshed] = refreshClipTranscriptsFromCues([clip], [], [clip.id], sourceWords);
+
+    expect(refreshed.transcript).toBe("");
+  });
+
+  it("preserves the surrounding clip transcript when a partial text-only line cannot be safely replaced", () => {
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "Opening words. Complete sentence. Closing words.",
+      hookOptions: [], titleOptions: [], description: "", hashtags: [], callsToAction: [],
+    };
+    const previousCue: CaptionCue = { id: "cue-1", start: 3.5, end: 6.5, text: "A full source line that crosses the clip.", words: [] };
+    const correctedCue: CaptionCue = { ...previousCue, text: "A corrected line." };
+
+    const [refreshed] = refreshClipTranscriptsFromCues([clip], [correctedCue], [clip.id], [], previousCue, true);
+
+    expect(refreshed).toBe(clip);
   });
 
   it("does not offer a cut that starts at an incomplete sentence before a long pause", () => {

@@ -8,8 +8,8 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
-import { applyCaptionCuePatch, translatedCuesForLanguage } from "@/features/studio/analysis/caption-edits";
-import { buildCaptionCues, buildClipSpeechRanges, EXPORT_FRAME_RATE, joinTranscriptWords, mapCaptionCuesToOutput, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { applyCaptionCuePatch, replaceCueWordsInTranscript, translatedCuesForLanguage } from "@/features/studio/analysis/caption-edits";
+import { buildCaptionCues, buildClipSpeechRanges, EXPORT_FRAME_RATE, joinTranscriptWords, mapCaptionCuesToOutput, refreshClipTranscriptsFromCues, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { createSerializedAsyncQueue, isCurrentFaceTrack, isCurrentProjectSnapshot, isCurrentSourceOperation, isCurrentTranslation, isOperationOwner, markSourceSavedIfMatchingProject, matchesReselectedSource, recoveryProjectAfterOpenFailure, shouldClearPendingProject } from "@/features/studio/async-guards";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
@@ -699,8 +699,9 @@ export default function Studio() {
         return [{ ...item, words: nextWords, start: Math.min(...nextWords.map((word) => word.start)), end: Math.max(...nextWords.map((word) => word.end)), text: joinTranscriptWords(nextWords) }];
       });
       const affectedClips = project.clips.filter((clip) => clip.end >= Math.min(sourceWord.start, updatedWord.start) && clip.start <= Math.max(sourceWord.end, updatedWord.end)).map((clip) => clip.id);
+      const clips = refreshClipTranscriptsFromCues(project.clips, editedCues, affectedClips, words);
       invalidateClipOutputs(affectedClips);
-      commitProject({ ...project, words, editedCues, translatedCues: [], translatedLanguage: "none" });
+      commitProject({ ...project, words, clips, editedCues, translatedCues: [], translatedLanguage: "none" });
       if (project.translatedCues.length) setNotice("Source captions changed. Re-run translation if you want a translated track for these edits.");
       return;
     }
@@ -713,8 +714,22 @@ export default function Studio() {
     const nextCues = all.map((item) => item.id === cue.id ? applyCaptionCuePatch(item, patch, activeClip.start, activeClip.end) : item);
     if (isTranslated) commitProject({ ...project, translatedCues: nextCues });
     else {
-      commitProject({ ...project, editedCues: nextCues, translatedCues: [], translatedLanguage: "none" });
+      const updatedCue = nextCues.find((item) => item.id === cue.id);
+      const timingOnlyEdit = patch.text === undefined && (patch.start !== undefined || patch.end !== undefined);
+      const words = timingOnlyEdit && updatedCue
+        ? replaceCueWordsInTranscript(project.words, cue, updatedCue)
+        : project.words;
+      const affectedClipIds = updatedCue
+        ? project.clips.filter((clip) => clip.end >= Math.min(cue.start, updatedCue.start) && clip.start <= Math.max(cue.end, updatedCue.end)).map((clip) => clip.id)
+        : [];
+      const clips = updatedCue
+        ? refreshClipTranscriptsFromCues(project.clips, nextCues, affectedClipIds, words, cue, patch.text !== undefined)
+        : project.clips;
+      const needsClipTranscriptReview = patch.text !== undefined && Boolean(cue.text.trim())
+        && project.clips.some((clip) => affectedClipIds.includes(clip.id) && clip.id.startsWith("clip-") && !clip.transcript.includes(cue.text));
+      commitProject({ ...project, words, clips, editedCues: nextCues, translatedCues: [], translatedLanguage: "none" });
       if (project.translatedCues.length) setNotice("Source captions changed. Re-run translation if you want a translated track for these edits.");
+      else if (needsClipTranscriptReview) setNotice("Caption text changed. Some overlapping clip transcripts could not be safely mapped to this partial line; review them before export.");
     }
   }
 

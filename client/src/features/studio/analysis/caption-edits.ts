@@ -1,9 +1,15 @@
-import type { CaptionCue } from "../types";
+import type { CaptionCue, TranscriptWord } from "../types";
 
 export function translatedCuesForLanguage(cues: CaptionCue[], targetLanguage: string): CaptionCue[] {
   if (targetLanguage === "none") return [];
   const prefix = `translated-${targetLanguage}-`;
   return cues.filter((cue) => cue.id.startsWith(prefix));
+}
+
+export function replaceCueWordsInTranscript(words: TranscriptWord[], previousCue: CaptionCue, nextCue: CaptionCue): TranscriptWord[] {
+  if (!previousCue.words.length) return words;
+  const replacedIds = new Set(previousCue.words.map((word) => word.id));
+  return [...words.filter((word) => !replacedIds.has(word.id)), ...nextCue.words].sort((a, b) => a.start - b.start);
 }
 
 export function applyCaptionCuePatch(
