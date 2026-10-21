@@ -60,7 +60,7 @@ export async function requestSaveTarget(name: string, format: OutputFormat): Pro
   const pickerRequest = picker({
     suggestedName: name,
     types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
-  }).then((handle) => handle.createWritable());
+  }).then((handle) => handle.createWritable()).catch(() => null);
   // Some embedded browsers expose the API but do not surface its native dialog.
   // Do not block encoding forever in that case; the caller will use BufferTarget.
   const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));

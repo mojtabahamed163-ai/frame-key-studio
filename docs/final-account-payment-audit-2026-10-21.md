@@ -27,15 +27,18 @@ The core Studio route remains available without authentication or a paywall. Its
 - Source/config search for payment, billing, subscription, quota, plan, Stripe, PayPal, and webhook implementations — **none found** outside documentation/UI copy and unrelated component showcase examples.
 - Route manifest inspection — `/` and `/studio` are declared.
 - Local smoke test from the project directory — `GET /`, `GET /studio`, `GET /api/health`, `GET /manus-routes.json`, and `GET /api/platform/config.js` all returned successful responses; the health endpoint returned `{"status":"ok"}` and the config response contained no configured secret values.
+- Browser E2E smoke test with a real 2-second H.264/AAC MP4 — upload, metadata detection (`320 × 180`, audio, `0:02`), manual clip creation, delivery screen, and local WebM export all passed. The generated output appeared in the UI as `Property-cut-1.webm` with a non-zero size (`37 KB`).
 - Authentication and Studio source inspection — no Studio paywall or account gate; local media flow is preserved.
 
-Build emitted non-failing warnings about the existing platform config script lacking `type="module"` and several large chunks. These are unrelated to account/payment behavior and did not fail the build.
+Build still emits a non-failing warning about the existing platform config script lacking `type="module"`. The heavy editor dependencies are now split into lazy feature chunks (the main Studio chunk is about 127 KB); model workers, TensorFlow/WebGL, and Mediabunny remain intentionally large because they contain the local processing runtimes and are not loaded on the service home page.
 
 ## Sandbox and limitations
 
 No payment sandbox was applicable because no payment integration exists. OAuth/managed database credentials were not configured in this session, so a live OAuth callback/database round trip was not performed. The automated tests cover session binding, logout/cookie behavior, lead validation/rate limiting, and Studio analysis/export modules.
 
-A full browser E2E run with a real local video file through model download, transcription, preview, export, and download was not completed in this audit; therefore this report does not claim full end-to-end media verification. No reproducible in-scope account, subscription, quota, or payment defect was found.
+The browser test used manual clipping rather than downloading the Whisper model, because the fixture intentionally contains no speech. It verified the real local media path through upload, metadata, preview/delivery UI, encoding, and a non-empty output. No reproducible in-scope account, subscription, quota, or payment defect remains.
+
+During the E2E run, an embedded/headless browser rejected `showSaveFilePicker` because it was not handling a native user gesture. The export path now catches that rejection and falls back to the in-memory output path instead of failing; the same fallback also protects browsers that expose but cannot use the native picker.
 
 ## Final conclusion
 

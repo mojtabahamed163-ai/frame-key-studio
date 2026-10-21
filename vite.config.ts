@@ -185,6 +185,21 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@tensorflow-models/face-detection") || id.includes("face-detection")) return "face-model";
+          if (id.includes("@tensorflow/tfjs-core")) return "tfjs-core";
+          if (id.includes("@tensorflow/tfjs-backend-webgl")) return "tfjs-webgl";
+          if (id.includes("@tensorflow/tfjs-converter")) return "tfjs-converter";
+          if (id.includes("@huggingface/transformers") || id.includes("onnxruntime")) return "local-models";
+          if (id.includes("mediabunny")) return "media-codecs";
+          if (id.includes("fflate")) return "zip-export";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     host: true,
