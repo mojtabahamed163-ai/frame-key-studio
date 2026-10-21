@@ -782,8 +782,8 @@ export default function Studio() {
     <div className="studio-shell">
       <StudioHeader currentStep={step} onStep={goToStep} sourceReady={Boolean(project)} busy={isAnalyzing || isTranslating || isTrackingFace || isExporting} />
       <main className="studio-main">
-        <input ref={fileInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.3gp" className="sr-only" onChange={handleFileInput} />
-        <input ref={captionInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" className="sr-only" onChange={importCaptions} />
+        <input ref={fileInputRef} type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.3gp" className="sr-only" aria-label={pendingProject ? "Choose the original source video" : "Choose a video source"} onChange={handleFileInput} />
+        <input ref={captionInputRef} type="file" accept=".srt,.vtt,text/vtt,application/x-subrip" className="sr-only" aria-label="Import an SRT or VTT caption file" onChange={importCaptions} />
         {(error || notice) && <div className={`studio-alert${error ? " studio-alert--error" : " studio-alert--notice"}`} role={error ? "alert" : "status"}>
           {error ? <AlertTriangle size={17} /> : <CheckCircle2 size={17} />}<span>{error || notice}</span>{error && <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button>}
         </div>}
@@ -795,7 +795,7 @@ export default function Studio() {
               <h2 id="step-title">{step === "upload" ? "Start with a recording." : step === "select" ? "Choose the moments." : step === "edit" ? "Shape the final cut." : "Export on your terms."}</h2>
               <p>{step === "upload" ? "Nothing leaves your browser unless you separately submit the existing service inquiry form on the main site." : step === "select" ? "Suggestions come from timed speech and complete sentences. Every cut stays editable." : step === "edit" ? "Watch the crop, edit the words and set the brand before encoding." : "Use direct-to-file saving for longer exports, or a memory-limited ZIP for small batches."}</p>
             </div>
-            <div className="studio-save-state"><span className={`studio-save-dot is-${saveState}`} />{saveState === "loading" ? "Opening local saves" : saveState === "saving" ? "Saving locally…" : saveState === "saved" ? "Local save ready" : "Local save unavailable"}</div>
+            <div className="studio-save-state" role="status" aria-live="polite"><span className={`studio-save-dot is-${saveState}`} />{saveState === "loading" ? "Opening local saves" : saveState === "saving" ? "Saving locally…" : saveState === "saved" ? "Local save ready" : "Local save unavailable"}</div>
           </div>
 
           {step === "upload" && <div className="studio-upload-layout">
@@ -963,7 +963,7 @@ export default function Studio() {
 
 function ProgressCard({ label, progress }: { label: string; progress: number }) {
   const percent = Math.round(Math.max(0, Math.min(1, progress)) * 100);
-  return <div className="studio-progress-card"><div><LoaderCircle size={15} className="studio-spinner" /><span>{label}</span><strong>{percent}%</strong></div><progress max="100" value={percent}>{percent}%</progress></div>;
+  return <div className="studio-progress-card" role="status" aria-live="polite" aria-label={`${label}: ${percent}% complete`}><div><LoaderCircle size={15} className="studio-spinner" aria-hidden="true" /><span>{label}</span><strong>{percent}%</strong></div><progress max="100" value={percent} aria-label={`${label} progress`}>{percent}%</progress></div>;
 }
 
 function PlayIcon() { return <span aria-hidden="true">▶</span>; }
