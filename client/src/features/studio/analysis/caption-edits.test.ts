@@ -36,6 +36,13 @@ describe("caption cue editing", () => {
     expect(updated.words).toEqual(cue.words);
   });
 
+  it("does not clamp a source cue start when only its end is edited", () => {
+    const crossingCue = { ...cue, start: 2, end: 8 };
+    const updated = applyCaptionCuePatch(crossingCue, { end: 7 }, 3, 7);
+    expect(updated.start).toBe(2);
+    expect(updated.end).toBe(7);
+  });
+
   it("uses the edited word timing for silence removal instead of retaining stale source timing", () => {
     const updated = applyCaptionCuePatch(cue, { start: 5 }, 3, 7);
     const updatedWords = replaceCueWordsInTranscript(cue.words, cue, updated);

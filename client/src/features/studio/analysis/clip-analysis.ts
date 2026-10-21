@@ -37,6 +37,37 @@ export function joinTranscriptWords(words: TranscriptWord[]): string {
   }, "").replace(/\s+/g, " ").trim();
 }
 
+function sameStrings(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function refreshGeneratedClipMetadata(clip: ClipSuggestion, previousTranscript: string, nextTranscript: string): ClipSuggestion {
+  const previousCopy = makePostCopy(previousTranscript, clip.start);
+  const nextCopy = makePostCopy(nextTranscript, clip.start);
+  const titleOptions = clip.titleOptions.map((title, index) => title === previousCopy.titleOptions[index] ? nextCopy.titleOptions[index] : title);
+  const selectedTitle = clip.selectedTitle && previousCopy.titleOptions.includes(clip.selectedTitle)
+    ? nextCopy.titleOptions[previousCopy.titleOptions.indexOf(clip.selectedTitle)]
+    : clip.selectedTitle;
+  const hookOptions = clip.hookOptions.map((hook) => hook === previousTranscript ? nextTranscript : hook);
+  const selectedHook = clip.selectedHook === previousTranscript ? nextTranscript : clip.selectedHook;
+  const description = clip.description === previousCopy.description
+    ? nextCopy.description
+    : clip.description.replace(previousTranscript, nextTranscript);
+  return {
+    ...clip,
+    transcript: nextTranscript,
+    titleOptions,
+    selectedTitle,
+    description,
+    hookOptions,
+    selectedHook,
+    hashtags: sameStrings(clip.hashtags, previousCopy.hashtags) ? nextCopy.hashtags : clip.hashtags,
+    reasons: ["Transcript edited; review generated copy before publishing"],
+    quality: "review",
+    qualityWarning: "Review required: the transcript was edited and generated copy may need review.",
+  };
+}
+
 export function refreshClipTranscriptsFromCues(
   clips: ClipSuggestion[],
   cues: CaptionCue[],
@@ -53,7 +84,7 @@ export function refreshClipTranscriptsFromCues(
       const updatedCue = cues.find((cue) => cue.id === previousCue.id);
       if (!updatedCue || !previousCue.text.trim() || !clip.transcript.includes(previousCue.text)) return clip;
       const transcript = clip.transcript.replace(previousCue.text, updatedCue.text).replace(/\s+/g, " ").trim();
-      return { ...clip, transcript };
+      return refreshGeneratedClipMetadata(clip, clip.transcript, transcript);
     }
     if (previousCue && !previousCue.words.length) return clip;
     const words = sourceWords.length

@@ -65,6 +65,26 @@ describe("local transcript analysis", () => {
     expect(refreshed.transcript).toBe("The corrected market.");
   });
 
+  it("refreshes generated copy and marks edited transcript metadata for review", () => {
+    const previousTranscript = "The wrong market.";
+    const clip: ClipSuggestion = {
+      id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: ["Built from complete sentences in the recording"],
+      transcript: previousTranscript, hookOptions: [previousTranscript],
+      titleOptions: ["“The wrong market.”", "The point: “The wrong market.”", "Worth a closer look: “The wrong market.”"],
+      selectedHook: previousTranscript, selectedTitle: "“The wrong market.”",
+      description: `${previousTranscript}\n\nA short excerpt. Review the transcript before posting.`, hashtags: ["#market"], callsToAction: ["Save this for later."],
+    };
+    const previousCue: CaptionCue = { id: "cue-1", start: 4, end: 6, text: previousTranscript, words: [] };
+    const correctedCue: CaptionCue = { ...previousCue, text: "The housing market." };
+    const [refreshed] = refreshClipTranscriptsFromCues([clip], [correctedCue], [clip.id], [], previousCue, true);
+    expect(refreshed.transcript).toBe("The housing market.");
+    expect(refreshed.description).toContain("The housing market.");
+    expect(refreshed.titleOptions[0]).toContain("The housing market.");
+    expect(refreshed.selectedTitle).toContain("The housing market.");
+    expect(refreshed.quality).toBe("review");
+    expect(refreshed.reasons[0]).toContain("Transcript edited");
+  });
+
   it("keeps source transcript words that are not represented by a partial imported caption", () => {
     const clip: ClipSuggestion = {
       id: "clip-4000-6000", start: 4, end: 6, score: 8, reasons: [], transcript: "The full source sentence remains here.",

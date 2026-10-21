@@ -22,8 +22,14 @@ export function applyCaptionCuePatch(
   const timingChanged = patch.start !== undefined || patch.end !== undefined;
 
   if (timingChanged) {
-    next.start = Math.max(clipStart, Math.min(next.start, clipEnd - 0.05));
-    next.end = Math.max(next.start + 0.05, Math.min(next.end, clipEnd));
+    // Clamp only the field the user edited. A source cue may cross the active
+    // clip boundaries; changing its out-point must not rewrite its in-point.
+    if (patch.start !== undefined) {
+      next.start = Math.max(clipStart, Math.min(next.start, Math.min(next.end - 0.05, clipEnd - 0.05)));
+    }
+    if (patch.end !== undefined) {
+      next.end = Math.max(next.start + 0.05, Math.min(next.end, clipEnd));
+    }
   }
 
   if (patch.text !== undefined) {
