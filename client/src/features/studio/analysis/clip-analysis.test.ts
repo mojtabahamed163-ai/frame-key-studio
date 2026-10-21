@@ -11,6 +11,7 @@ describe("local transcript analysis", () => {
     expect(normalizeClipBounds(-4, 99, 12)).toEqual({ start: 0, end: 12 });
     expect(normalizeClipBounds(11.9, 11.91, 12)).toEqual({ start: 11.75, end: 12 });
     expect(normalizeClipBounds(Number.NaN, Number.NaN, 12)).toEqual({ start: 0, end: 12 });
+    expect(normalizeClipBounds(0.35, 0.4, 0.4, 1)).toEqual({ start: 0, end: 0.4 });
     expect(normalizeClipBounds(0, 1, 0)).toBeNull();
   });
 
