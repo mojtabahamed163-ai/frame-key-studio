@@ -36,9 +36,7 @@ export function videoBitrateForHeight(height: number): number {
 }
 
 export async function supportedOutputFormat(height: number): Promise<OutputFormat | null> {
-  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  const isWebKit = /AppleWebKit/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg)/i.test(userAgent);
-  if (isWebKit) return null;
+  if (shouldUseMediaRecorderFallback()) return mediaRecorderOutputFormat();
   if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis)) return null;
   const width = Math.round(height * 9 / 16);
   const videoSupported = async (codec: string) => {
@@ -68,6 +66,28 @@ export async function requestSaveTarget(name: string, format: OutputFormat): Pro
   // Do not block encoding forever in that case; the caller will use BufferTarget.
   const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));
   return Promise.race([pickerRequest, timeout]);
+}
+
+function isSafariWebKit(): boolean {
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /AppleWebKit/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg)/i.test(userAgent);
+}
+
+function mediaRecorderOutputFormat(): OutputFormat | null {
+  if (typeof MediaRecorder === "undefined") return null;
+  const supported = (mimeType: string) => {
+    try { return MediaRecorder.isTypeSupported(mimeType); }
+    catch { return false; }
+  };
+  if (supported("video/mp4;codecs=avc1.42E01E,mp4a.40.2") || supported("video/mp4")) return "mp4";
+  if (supported("video/webm;codecs=vp9,opus") || supported("video/webm")) return "webm-vp9";
+  if (supported("video/webm;codecs=vp8,opus")) return "webm-vp8";
+  return null;
+}
+
+function shouldUseMediaRecorderFallback(): boolean {
+  if (isSafariWebKit()) return true;
+  return !("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis);
 }
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
@@ -235,6 +255,196 @@ function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[
 function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
 function mimeFor(format: OutputFormat): string { return isWebm(format) ? "video/webm" : "video/mp4"; }
 
+function fallbackMimeType(format: OutputFormat): string {
+  const candidates = format === "mp4"
+    ? ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4"]
+    : format === "webm-vp9"
+      ? ["video/webm;codecs=vp9,opus", "video/webm"]
+      : ["video/webm;codecs=vp8,opus", "video/webm"];
+  return candidates.find((mimeType) => {
+    try { return typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mimeType); }
+    catch { return false; }
+  }) ?? "";
+}
+
+function drawFallbackFrame(
+  video: HTMLVideoElement,
+  context: CanvasRenderingContext2D,
+  fullVideoContext: CanvasRenderingContext2D,
+  fullVideoCanvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+  project: StudioProject,
+  clip: ClipSuggestion,
+  cues: CaptionCue[],
+  faceKeyframes: FaceKeyframe[],
+  logo: ImageBitmap | null,
+): void {
+  const center = project.settings.smartFraming
+    ? faceCenterAt(faceKeyframes, Math.max(0, video.currentTime - clip.start), project.settings.manualCropX, project.settings.manualCropY)
+    : { x: project.settings.manualCropX, y: project.settings.manualCropY };
+  context.clearRect(0, 0, width, height);
+  if (project.settings.framingMode === "full") {
+    context.fillStyle = "#17261f";
+    context.fillRect(0, 0, width, height);
+    fullVideoContext.clearRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+    fullVideoContext.fillStyle = "#17261f";
+    fullVideoContext.fillRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+    fullVideoContext.drawImage(video, 0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+    context.drawImage(fullVideoCanvas, 0, (height - fullVideoCanvas.height) / 2, width, fullVideoCanvas.height);
+  } else {
+    const crop = cropForPortrait(video.videoWidth || project.width, video.videoHeight || project.height, 9 / 16, center.x, center.y);
+    context.drawImage(video, crop.left, crop.top, crop.width, crop.height, 0, 0, width, height);
+  }
+  const absoluteTime = video.currentTime;
+  if (project.settings.showCaptions) {
+    const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
+    drawCaption(context, cue, absoluteTime, height, project.settings);
+  }
+  drawTitleCard(context, clip, absoluteTime, project.settings);
+  drawLogo(context, logo, project.settings.logoPosition, width, height);
+}
+
+async function exportClipWithMediaRecorder(options: {
+  file: File;
+  project: StudioProject;
+  clip: ClipSuggestion;
+  cues: CaptionCue[];
+  faceKeyframes: FaceKeyframe[];
+  format: OutputFormat;
+  writable?: FileWritable | null;
+  signal: AbortSignal;
+  onProgress: (progress: ExportProgress) => void;
+}): Promise<ExportResult> {
+  const { file, project, cues, faceKeyframes, format, writable, signal, onProgress } = options;
+  const bounds = normalizeClipBounds(options.clip.start, options.clip.end, project.duration);
+  if (!bounds) throw new Error("The source duration is unavailable. Choose the video again before exporting.");
+  const clip = { ...options.clip, ...bounds };
+  const duration = clip.end - clip.start;
+  if (duration <= 0 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
+  if (typeof MediaRecorder === "undefined") throw new Error("This browser does not support local video recording.");
+  const mimeType = fallbackMimeType(format);
+  if (!mimeType) throw new Error("This browser does not provide a compatible local recording format.");
+  const ranges = remapRanges(project, clip);
+  const height = project.settings.outputHeight;
+  const width = Math.round(height * 9 / 16);
+  const video = document.createElement("video");
+  const objectUrl = URL.createObjectURL(file);
+  video.src = objectUrl;
+  video.preload = "auto";
+  video.playsInline = true;
+  video.volume = 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("Canvas encoding is unavailable in this browser.");
+  const fullVideoCanvas = document.createElement("canvas");
+  fullVideoCanvas.width = width;
+  fullVideoCanvas.height = Math.max(1, Math.min(height, Math.round(width * project.height / Math.max(1, project.width))));
+  const fullVideoContext = fullVideoCanvas.getContext("2d", { alpha: false });
+  if (!fullVideoContext) throw new Error("Full-video canvas is unavailable in this browser.");
+  let audioContext: AudioContext | null = null;
+  let audioDestination: MediaStreamAudioDestinationNode | null = null;
+  let logo: ImageBitmap | null = null;
+  let recorder: MediaRecorder | null = null;
+  let stream: MediaStream | null = null;
+  try {
+    onProgress({ progress: 0, phase: "preparing", detail: "Preparing Safari-compatible local recording" });
+    await new Promise<void>((resolve, reject) => {
+      const onLoaded = () => resolve();
+      const onError = () => reject(new Error("The browser could not decode this video for export."));
+      video.addEventListener("loadedmetadata", onLoaded, { once: true });
+      video.addEventListener("error", onError, { once: true });
+      video.load();
+    });
+    const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end) : 0;
+    const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
+    logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
+    const canvasStream = canvas.captureStream(30);
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (AudioContextCtor) {
+      try {
+        audioContext = new AudioContextCtor();
+        const source = audioContext.createMediaElementSource(video);
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = gain;
+        audioDestination = audioContext.createMediaStreamDestination();
+        source.connect(gainNode).connect(audioDestination);
+      } catch {
+        audioContext = null;
+        audioDestination = null;
+      }
+    }
+    stream = canvasStream;
+    audioDestination?.stream.getAudioTracks().forEach((track) => stream?.addTrack(track));
+    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: videoBitrateForHeight(height), audioBitsPerSecond: 128_000 });
+    const chunks: Blob[] = [];
+    let recorderError: Error | null = null;
+    const stopped = new Promise<void>((resolve, reject) => {
+      recorder!.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder!.onerror = () => { recorderError = new Error("The browser stopped local recording unexpectedly."); reject(recorderError); };
+      recorder!.onstop = () => resolve();
+    });
+    recorder.start(250);
+    await audioContext?.resume();
+    const totalOutputDuration = ranges.reduce((sum, range) => sum + Math.max(0, range.end - range.start), 0);
+    let outputElapsed = 0;
+    const nextFrame = () => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    for (const range of ranges) {
+      if (range.end <= range.start) continue;
+      if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+      await new Promise<void>((resolve, reject) => {
+        const onSeeked = () => resolve();
+        const onError = () => reject(new Error("The browser could not seek this video for export."));
+        video.addEventListener("seeked", onSeeked, { once: true });
+        video.addEventListener("error", onError, { once: true });
+        video.currentTime = clip.start + range.start;
+      });
+      if (recorder.state === "paused") recorder.resume();
+      await video.play();
+      while (video.currentTime < clip.start + range.end - 0.02) {
+        if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+        drawFallbackFrame(video, context, fullVideoContext, fullVideoCanvas, width, height, project, clip, cues, faceKeyframes, logo);
+        const rangeElapsed = Math.max(0, Math.min(range.end - range.start, video.currentTime - clip.start - range.start));
+        onProgress({ progress: totalOutputDuration ? (outputElapsed + rangeElapsed) / totalOutputDuration : 0, phase: "encoding", detail: `${Math.round((totalOutputDuration ? (outputElapsed + rangeElapsed) / totalOutputDuration : 0) * 100)}% — recording stays on this device` });
+        await nextFrame();
+      }
+      video.pause();
+      outputElapsed += range.end - range.start;
+      if (recorder.state === "recording") recorder.pause();
+    }
+    if (recorder.state === "paused") recorder.resume();
+    if (recorder.state === "recording") recorder.stop();
+    await stopped;
+    if (recorderError) throw recorderError;
+    const blob = new Blob(chunks, { type: mimeType.split(";")[0] });
+    if (!blob.size) throw new Error("The export completed without a file.");
+    const extension = format === "mp4" ? "mp4" : "webm";
+    const filename = `${(clip.selectedTitle || project.name).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 56)}-clip-${Math.round(clip.start)}.${extension}`;
+    if (writable) {
+      const data = new Uint8Array(await blob.arrayBuffer());
+      await writable.write({ type: "write", position: 0, data });
+      await writable.close();
+    }
+    onProgress({ progress: 1, phase: "complete", detail: "Your file is ready on this device" });
+    return { filename, mimeType: blob.type, blob: writable ? undefined : blob, byteLength: blob.size, streamed: Boolean(writable) };
+  } catch (error) {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    if (writable) await writable.abort(error).catch(() => undefined);
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw error instanceof Error ? error : new Error("Export failed on this device.");
+  } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    URL.revokeObjectURL(objectUrl);
+    stream?.getTracks().forEach((track) => track.stop());
+    if (audioContext) await audioContext.close().catch(() => undefined);
+    if (logo) logo.close();
+  }
+}
+
 export async function exportClip(options: {
   file: File;
   project: StudioProject;
@@ -247,6 +457,7 @@ export async function exportClip(options: {
   onProgress: (progress: ExportProgress) => void;
 }): Promise<ExportResult> {
   const { file, project, cues, faceKeyframes, format, writable, signal, onProgress } = options;
+  if (shouldUseMediaRecorderFallback()) return exportClipWithMediaRecorder(options);
   const bounds = normalizeClipBounds(options.clip.start, options.clip.end, project.duration);
   if (!bounds) throw new Error("The source duration is unavailable. Choose the video again before exporting.");
   const clip = { ...options.clip, ...bounds };
