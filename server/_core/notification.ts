@@ -97,11 +97,8 @@ export async function notifyOwner(
     });
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
       console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
-          detail ? `: ${detail}` : ""
-        }`
+        `[Notification] Failed to notify owner (${response.status} ${response.statusText})`
       );
       return false;
     }
