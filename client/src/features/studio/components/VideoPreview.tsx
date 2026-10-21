@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject, type SyntheticEvent } from "react";
 import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { objectPositionForPortraitCrop } from "../media/framing";
@@ -40,6 +40,21 @@ export function VideoPreview({
   const activeWordId = activeCue?.words.find((word) => currentTime >= word.start && currentTime <= word.end)?.id;
   const titleText = clip?.selectedTitle?.trim() || clip?.titleOptions[0]?.trim() || "";
 
+  function handleTimeUpdate(event: SyntheticEvent<HTMLVideoElement>) {
+    const video = event.currentTarget;
+    if (!clip) {
+      onTimeUpdate(video.currentTime);
+      return;
+    }
+    if (video.currentTime >= clip.end) {
+      video.pause();
+      video.currentTime = clip.end;
+    } else if (video.currentTime < clip.start) {
+      video.currentTime = clip.start;
+    }
+    onTimeUpdate(Math.max(clip.start, Math.min(video.currentTime, clip.end)));
+  }
+
   useEffect(() => {
     const background = backgroundVideoRef.current;
     if (!background || settings.framingMode !== "full") return;
@@ -67,7 +82,15 @@ export function VideoPreview({
           controls
           playsInline
           preload="metadata"
-          onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+          onTimeUpdate={handleTimeUpdate}
+          onPlay={(event) => {
+            if (!clip) return;
+            const video = event.currentTarget;
+            if (video.currentTime >= clip.end || video.currentTime < clip.start) {
+              video.currentTime = clip.start;
+              onTimeUpdate(clip.start);
+            }
+          }}
           onLoadedMetadata={(event) => {
             const video = event.currentTarget;
             setVideoSize({ src, width: video.videoWidth, height: video.videoHeight });

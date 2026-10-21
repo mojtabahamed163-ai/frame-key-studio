@@ -8,7 +8,8 @@ import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
-import { buildCaptionCues, joinTranscriptWords, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { buildCaptionCues, joinTranscriptWords, normalizeClipBounds, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
+import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
 import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
@@ -367,6 +368,7 @@ export default function Studio() {
     try {
       const transcription = await transcribeVideo(sourceFile, project.sourceLanguage, controller.signal, setAnalysisProgress);
       const words = transcription.words;
+      if (controller.signal.aborted || analysisController.current !== controller) return;
       if (!words.length) throw new Error("No timed speech words were returned. Import an SRT/VTT file or add clips manually.");
       const suggestions = suggestClips(words, 3, project.duration);
       const next: StudioProject = {
@@ -391,20 +393,34 @@ export default function Studio() {
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : "Local analysis failed.");
     } finally {
-      setIsAnalyzing(false);
-      analysisController.current = null;
+      if (analysisController.current === controller) {
+        analysisController.current = null;
+        setIsAnalyzing(false);
+        setAnalysisProgress(null);
+      }
     }
   }
 
-  function cancelAnalysis() { analysisController.current?.abort(); }
+  function cancelAnalysis() {
+    const controller = analysisController.current;
+    if (!controller) return;
+    analysisController.current = null;
+    controller.abort();
+    setIsAnalyzing(false);
+    setAnalysisProgress(null);
+  }
 
   function addManualClip() {
     if (!project) return;
-    const start = Math.max(0, Math.min(currentTime, Math.max(0, project.duration - 1)));
+    cancelAnalysis();
+    const bounds = normalizeClipBounds(currentTime, currentTime + Math.min(30, Math.max(1, project.duration - currentTime)), project.duration, 1);
+    if (!bounds) {
+      setError("The source duration is unavailable. Choose the video again before adding a manual clip.");
+      return;
+    }
     const clip: ClipSuggestion = {
       id: `manual-${Date.now()}`,
-      start,
-      end: Math.min(project.duration, start + Math.min(30, Math.max(1, project.duration - start))),
+      ...bounds,
       score: 0,
       reasons: ["Manual cut: choose the in/out points yourself."],
       transcript: "",
@@ -418,7 +434,7 @@ export default function Studio() {
     commitProject({ ...project, clips: [...project.clips, clip], selectedClipId: clip.id, step: "edit" });
     setSelectedForBatch((current) => [...current, clip.id]);
     setStep("edit");
-    setCurrentTime(start);
+    setCurrentTime(bounds.start);
   }
 
   function chooseClip(clip: ClipSuggestion, nextStep: StepId = "edit") {
@@ -441,9 +457,11 @@ export default function Studio() {
       if (patch.selectedHook !== undefined && !patch.selectedHook.trim()) next.selectedHook = undefined;
       if (patch.start !== undefined || patch.end !== undefined || hookStart !== undefined) {
         changedBoundaries = true;
-        next.start = Math.max(0, Math.min(next.start, project.duration - 0.1));
-        next.end = Math.min(project.duration, Math.max(next.start + 0.25, next.end));
-        newStart = next.start;
+        const bounds = normalizeClipBounds(next.start, next.end, project.duration);
+        if (!bounds) return next;
+        next.start = bounds.start;
+        next.end = bounds.end;
+        newStart = bounds.start;
       }
       if (patch.start !== undefined && hookStart === undefined) {
         const matchingHook = clip.hookStartOptions?.findIndex((start) => Math.abs(start - next.start) < 0.06) ?? -1;
@@ -845,7 +863,7 @@ export default function Studio() {
               {activeClip ? <VideoPreview src={previewUrl} clip={activeClip} cues={currentCues} settings={settings} faceKeyframes={faceKeyframes} videoRef={videoRef} currentTime={currentTime} onTimeUpdate={setCurrentTime} /> : <div className="studio-empty-state"><Scissors size={22} /><p>Select a suggestion or create a manual clip.</p><button type="button" className="studio-button studio-button--secondary" onClick={addManualClip}><Plus size={15} />Add manual clip</button></div>}
               {activeClip && <div className="studio-cut-controls">
                 <div className="studio-cut-controls__heading"><span className="studio-mini-label">IN / OUT POINTS</span><button type="button" className="studio-text-button" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = activeClip.start; setCurrentTime(activeClip.start); void videoRef.current.play().catch(() => undefined); } }}><PlayIcon />Play this range</button></div>
-                <div className="studio-time-row"><label>Start <span>seconds</span><input type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={activeClip.start.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={activeClip.end.toFixed(1)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
+                <div className="studio-time-row"><label>Start <span>seconds</span><input type="number" min="0" max={activeClip.end - 0.25} step="0.1" value={formatEditableTime(activeClip.start)} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /></label><label>End <span>seconds</span><input type="number" min={activeClip.start + 0.25} max={project.duration} step="0.1" value={formatEditableTime(activeClip.end)} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></label><span className="studio-duration-pill">{Math.round(activeClip.end - activeClip.start)} sec</span></div>
                 <div className="studio-cut-range"><input aria-label="Adjust clip start" type="range" min="0" max={Math.max(0, activeClip.end - 0.5)} step="0.1" value={activeClip.start} onChange={(event) => updateClip(activeClip.id, { start: Number(event.target.value) })} /><input aria-label="Adjust clip end" type="range" min={activeClip.start + 0.5} max={project.duration} step="0.1" value={activeClip.end} onChange={(event) => updateClip(activeClip.id, { end: Number(event.target.value) })} /></div>
               </div>}
               {activeClip && <section className="studio-panel studio-captions-panel">
