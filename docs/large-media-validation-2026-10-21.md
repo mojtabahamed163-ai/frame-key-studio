@@ -32,7 +32,7 @@ pnpm check
 # نجح دون أخطاء TypeScript
 
 pnpm test -- --run
-# 11 ملفات اختبار، 57 اختبارًا ناجحًا
+# 12 ملف اختبار، 59 اختبارًا ناجحًا
 
 pnpm build
 # Vite وesbuild نجحا وبُني dist/index.js وdist/public
