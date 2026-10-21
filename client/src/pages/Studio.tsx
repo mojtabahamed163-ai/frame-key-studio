@@ -11,7 +11,7 @@ import { VideoPreview } from "@/features/studio/components/VideoPreview";
 import { buildCaptionCues, joinTranscriptWords, normalizeClipBounds, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
-import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/studio/export/download";
+import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
@@ -606,6 +606,7 @@ export default function Studio() {
   async function exportOne() {
     if (!project || !sourceFile || !activeClip || !outputFormat) return;
     setError("");
+    setExportProgress(null);
     setIsExporting(true);
     setBatchZip(null);
     setRenderStatuses((current) => ({ ...current, [activeClip.id]: "rendering" }));
@@ -617,8 +618,9 @@ export default function Studio() {
     try {
       const extension = outputFormat === "mp4" ? "mp4" : "webm";
       const platformTag = settings.outputPlatform === "generic" ? "" : `${settings.outputPlatform}-`;
-      const outputName = `${platformTag}${safeFileStem(clipTitle(activeClip, 0))}.${extension}`;
-      if (hasSavePicker) writable = await requestSaveTarget(outputName, outputFormat);
+      const usedOutputNames = new Set(outputs.map((item) => item.result.filename.toLowerCase()));
+      const outputName = uniqueFilename(`${platformTag}${safeFileStem(clipTitle(activeClip, 0))}.${extension}`, usedOutputNames);
+      if (hasSavePicker) writable = await requestSaveTarget(outputName, outputFormat, controller.signal);
       const converted = await exportClip({
         file: sourceFile, project, clip: activeClip, cues: chooseSubtitleForExport(activeClip),
         faceKeyframes, format: outputFormat, writable, signal: controller.signal,
@@ -653,6 +655,7 @@ export default function Studio() {
     if (!clips.length) { setError("Select at least one clip for the batch."); return; }
     if (estimatedZipBytes > ZIP_LIMIT) { setError("This ZIP would exceed the safe in-browser memory budget. Choose 720p or export clips one at a time with direct file saving."); return; }
     setError("");
+    setExportProgress(null);
     setIsExporting(true);
     setRenderStatuses(Object.fromEntries(clips.map((clip) => [clip.id, "queued" as const])));
     setClipProgress(Object.fromEntries(clips.map((clip) => [clip.id, 0])));
@@ -662,6 +665,7 @@ export default function Studio() {
     const controller = new AbortController();
     exportController.current = controller;
     const batchResults: SavedOutput[] = [];
+    const usedOutputNames = new Set<string>();
     let currentClipId: string | null = null;
     try {
       for (let index = 0; index < clips.length; index += 1) {
@@ -670,7 +674,7 @@ export default function Studio() {
         setRenderStatuses((current) => ({ ...current, [clip.id]: "rendering" }));
         const extension = outputFormat === "mp4" ? "mp4" : "webm";
         const platformTag = settings.outputPlatform === "generic" ? "" : `${settings.outputPlatform}-`;
-        const outputName = `${platformTag}${safeFileStem(clipTitle(clip, index))}.${extension}`;
+        const outputName = uniqueFilename(`${platformTag}${safeFileStem(clipTitle(clip, index))}.${extension}`, usedOutputNames);
         const converted = await exportClip({
           file: sourceFile, project, clip,
           cues: chooseSubtitleForExport(clip),
@@ -698,8 +702,10 @@ export default function Studio() {
         name: item.result.filename,
         data: new Uint8Array(await item.result.blob!.arrayBuffer()),
       })));
-      if (zipEntries.length === batchResults.length && actualBytes <= ZIP_LIMIT) {
-        setBatchZip(createZip(zipEntries));
+      if (controller.signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+      const zip = zipEntries.length === batchResults.length ? createZip(zipEntries) : null;
+      if (zip && zip.size <= ZIP_LIMIT && actualBytes <= ZIP_LIMIT) {
+        setBatchZip(zip);
         setNotice(`Finished ${batchResults.length} clips. You can save each one or download the ZIP.`);
       } else {
         setNotice(`Finished ${batchResults.length} clips, but the combined files exceed the ZIP memory limit. Save them individually below.`);
