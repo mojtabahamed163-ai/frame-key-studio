@@ -15,7 +15,7 @@ import { createZip, downloadBlob, downloadText, replaceOutputForClip, safeFileSt
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
-import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs } from "@/features/studio/storage/project-store";
+import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs, sourceMatchesProject } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
@@ -223,10 +223,7 @@ export default function Studio() {
     setError("");
     try {
       const info = await inspectVideo(file);
-      const sourceIdentityMismatch = file.name !== saved.sourceFileName
-        || file.size !== saved.sourceSize
-        || (!restoredFromOpfs && saved.sourceLastModified > 0 && file.lastModified !== saved.sourceLastModified);
-      if (sourceIdentityMismatch || (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height))) {
+      if (!sourceMatchesProject(file, saved, restoredFromOpfs) || (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height))) {
         throw new Error("This video does not match the saved source metadata. Keep the project and choose the original recording.");
       }
       const merged: StudioProject = {

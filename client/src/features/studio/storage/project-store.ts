@@ -15,6 +15,16 @@ type FileSystemWritableHandle = FileSystemFileHandle & {
   createWritable: () => Promise<FileSystemWritableFileStream>;
 };
 
+export function sourceMatchesProject(
+  file: File,
+  project: Pick<StudioProject, "sourceFileName" | "sourceSize" | "sourceLastModified">,
+  restoredFromOpfs = false,
+): boolean {
+  return (restoredFromOpfs || file.name === project.sourceFileName)
+    && file.size === project.sourceSize
+    && (restoredFromOpfs || !project.sourceLastModified || file.lastModified === project.sourceLastModified);
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) {
