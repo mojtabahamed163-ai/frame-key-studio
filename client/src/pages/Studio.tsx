@@ -219,13 +219,13 @@ export default function Studio() {
     setError("");
   }
 
-  async function activateSavedProject(saved: StudioProject, file: File) {
+  async function activateSavedProject(saved: StudioProject, file: File, restoredFromOpfs = false) {
     setError("");
     try {
       const info = await inspectVideo(file);
       const sourceIdentityMismatch = file.name !== saved.sourceFileName
         || file.size !== saved.sourceSize
-        || (saved.sourceLastModified > 0 && file.lastModified !== saved.sourceLastModified);
+        || (!restoredFromOpfs && saved.sourceLastModified > 0 && file.lastModified !== saved.sourceLastModified);
       if (sourceIdentityMismatch || (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height))) {
         throw new Error("This video does not match the saved source metadata. Keep the project and choose the original recording.");
       }
@@ -314,7 +314,7 @@ export default function Studio() {
     setError("");
     const localFile = saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null;
     if (localFile) {
-      await activateSavedProject(saved, localFile);
+      await activateSavedProject(saved, localFile, true);
       return;
     }
     setPendingProject(saved);
