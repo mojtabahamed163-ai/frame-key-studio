@@ -24,8 +24,11 @@ self.onmessage = async (event: MessageEvent<RequestMessage>) => {
         },
       }) as unknown as AsrPipeline;
     }
+    const chunkLengthSeconds = Math.max(1, Math.floor(audio.length / 16_000));
     const result = await transcriber(audio, {
       return_timestamps: "word",
+      chunk_length_s: chunkLengthSeconds,
+      stride_length_s: 0,
       ...(language && language !== "auto" ? { language } : {}),
       task: "transcribe",
     });
