@@ -11,7 +11,7 @@ import { VideoPreview } from "@/features/studio/components/VideoPreview";
 import { buildCaptionCues, joinTranscriptWords, normalizeClipBounds, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import { exportSrt, exportVtt, parseSubtitleFile } from "@/features/studio/analysis/subtitles";
-import { createZip, downloadBlob, downloadText, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
+import { createZip, downloadBlob, downloadText, replaceOutputForClip, safeFileStem, uniqueFilename } from "@/features/studio/export/download";
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
@@ -26,6 +26,7 @@ const LANGUAGE_OPTIONS = [
   ["it", "Italian"], ["pt", "Portuguese"], ["ar", "Arabic"], ["nl", "Dutch"], ["ja", "Japanese"], ["zh", "Chinese"],
 ] as const;
 const ZIP_LIMIT = 64 * 1024 * 1024;
+const ZIP_SOURCE_LIMIT = Math.floor(ZIP_LIMIT / 3);
 const LARGE_FILE_WARNING_BYTES = 750 * 1024 * 1024;
 
 interface SavedOutput { result: ExportResult; clipId: string; clipLabel: string }
@@ -222,7 +223,10 @@ export default function Studio() {
     setError("");
     try {
       const info = await inspectVideo(file);
-      if (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height)) {
+      const sourceIdentityMismatch = file.name !== saved.sourceFileName
+        || file.size !== saved.sourceSize
+        || (saved.sourceLastModified > 0 && file.lastModified !== saved.sourceLastModified);
+      if (sourceIdentityMismatch || (saved.duration > 0 && (Math.abs(info.duration - saved.duration) > 0.5 || info.width !== saved.width || info.height !== saved.height))) {
         throw new Error("This video does not match the saved source metadata. Keep the project and choose the original recording.");
       }
       const merged: StudioProject = {
@@ -249,6 +253,9 @@ export default function Studio() {
   async function acceptFile(file: File) {
     setError("");
     setNotice("");
+    analysisController.current?.abort();
+    analysisController.current = null;
+    setIsAnalyzing(false);
     if (pendingProject) {
       if (file.size !== pendingProject.sourceSize) {
         setError("This file size does not match the saved project. Keep the project, then choose its original source file.");
@@ -582,6 +589,11 @@ export default function Studio() {
     }
   }
 
+  function cancelFaceTracking() {
+    faceController.current?.abort();
+    setFaceProgress(null);
+  }
+
   function chooseSubtitleForExport(clip: ClipSuggestion): CaptionCue[] {
     if (!project) return [];
     const translatedForClip = project.translatedCues.some((cue) => cue.end >= clip.start && cue.start <= clip.end);
@@ -630,7 +642,7 @@ export default function Studio() {
         },
       });
       const result = { ...converted, filename: outputName };
-      setOutputs((current) => [{ result, clipId: activeClip.id, clipLabel: clipTitle(activeClip, 0) }, ...current]);
+      setOutputs((current) => replaceOutputForClip(current, { result, clipId: activeClip.id, clipLabel: clipTitle(activeClip, 0) }));
       setRenderStatuses((current) => ({ ...current, [activeClip.id]: "ready" }));
       setClipProgress((current) => ({ ...current, [activeClip.id]: 1 }));
       setNotice(result.streamed ? "Export saved using the browser’s direct-to-file writer." : "Export is ready. Use the save button below to download it.");
@@ -653,7 +665,7 @@ export default function Studio() {
     if (!project || !sourceFile || !outputFormat) return;
     const clips = project.clips.filter((clip) => selectedForBatch.includes(clip.id));
     if (!clips.length) { setError("Select at least one clip for the batch."); return; }
-    if (estimatedZipBytes > ZIP_LIMIT) { setError("This ZIP would exceed the safe in-browser memory budget. Choose 720p or export clips one at a time with direct file saving."); return; }
+    if (estimatedZipBytes > ZIP_SOURCE_LIMIT) { setError("This batch would exceed the safe in-browser memory budget once video buffers and ZIP copies are included. Choose 720p or export clips one at a time with direct file saving."); return; }
     setError("");
     setExportProgress(null);
     setIsExporting(true);
@@ -698,17 +710,22 @@ export default function Studio() {
         currentClipId = null;
       }
       const actualBytes = batchResults.reduce((sum, item) => sum + item.result.byteLength, 0);
-      const zipEntries = await Promise.all(batchResults.filter((item) => item.result.blob).map(async (item) => ({
-        name: item.result.filename,
-        data: new Uint8Array(await item.result.blob!.arrayBuffer()),
-      })));
-      if (controller.signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
-      const zip = zipEntries.length === batchResults.length ? createZip(zipEntries) : null;
-      if (zip && zip.size <= ZIP_LIMIT && actualBytes <= ZIP_LIMIT) {
+      let zip: Blob | null = null;
+      if (actualBytes <= ZIP_SOURCE_LIMIT && batchResults.every((item) => Boolean(item.result.blob))) {
+        const zipEntries: Array<{ name: string; data: Uint8Array }> = [];
+        for (const item of batchResults) {
+          if (controller.signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+          zipEntries.push({ name: item.result.filename, data: new Uint8Array(await item.result.blob!.arrayBuffer()) });
+        }
+        if (controller.signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+        const candidate = createZip(zipEntries);
+        if (candidate.size <= ZIP_LIMIT) zip = candidate;
+      }
+      if (zip) {
         setBatchZip(zip);
         setNotice(`Finished ${batchResults.length} clips. You can save each one or download the ZIP.`);
       } else {
-        setNotice(`Finished ${batchResults.length} clips, but the combined files exceed the ZIP memory limit. Save them individually below.`);
+        setNotice(`Finished ${batchResults.length} clips, but the combined buffers exceed the safe ZIP memory budget. Save them individually below.`);
       }
     } catch (cause) {
       const cancelled = controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError");
@@ -883,7 +900,7 @@ export default function Studio() {
                 {settings.silenceRemoval && <label className="studio-field studio-range-field">Remove a gap longer than {settings.silenceThresholdSeconds.toFixed(1)} s<input type="range" min="0.7" max="2.5" step="0.1" value={settings.silenceThresholdSeconds} onChange={(event) => changeSettings({ silenceThresholdSeconds: Number(event.target.value) })} /><small>Review before export; pauses are inferred from transcription timestamps.</small></label>}
                 <label className="studio-toggle-row"><span><strong>Peak-normalize audio</strong><small>Sets the measured peak near −1 dBFS; not LUFS mastering.</small></span><input type="checkbox" checked={settings.peakNormalize} onChange={(event) => changeSettings({ peakNormalize: event.target.checked })} /></label>
                 <label className="studio-toggle-row"><span><strong>Overlay the selected title</strong><small>Brand-colored title card for the first 2.8 seconds of the clip.</small></span><input type="checkbox" checked={settings.showTitleCard} onChange={(event) => changeSettings({ showTitleCard: event.target.checked })} /></label>
-                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow the largest face</strong><small>Optional local face detection on the selected clip.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip || isTrackingFace}>{isTrackingFace ? "Scanning…" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
+                <div className="studio-reframe-card"><div><span className="studio-feature-icon"><ScanFace size={16} /></span><div><strong>Follow the largest face</strong><small>Optional local face detection on the selected clip.</small></div></div><button type="button" className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`} onClick={() => isTrackingFace ? cancelFaceTracking() : settings.smartFraming ? changeSettings({ smartFraming: false }) : void runFaceTracking()} disabled={!activeClip}>{isTrackingFace ? "Stop scan" : settings.smartFraming ? "Auto crop on" : "Find face"}</button></div>
                 {isTrackingFace && faceProgress && <ProgressCard label={`Checking frame ${faceProgress.completed} of ${faceProgress.total}`} progress={faceProgress.completed / Math.max(1, faceProgress.total)} />}
                 {settings.smartFraming && faceKeyframes.length === 0 && <p className="studio-inline-warning"><AlertTriangle size={14} />No saved face track for this clip. Run face detection or turn auto framing off.</p>}
                 {settings.smartFraming && faceKeyframes.some((frame) => frame.framingSafe === false) && <p className="studio-inline-warning"><AlertTriangle size={14} />The detected face box does not fit in the 9:16 crop at every sampled moment. Review the preview and adjust manual framing if needed.</p>}
@@ -918,8 +935,8 @@ export default function Studio() {
                 })}
                 <div className="studio-export-summary"><label className="studio-field studio-output-profile">TARGET<select value={settings.outputPlatform} disabled={isExporting} onChange={(event) => changeSettings({ outputPlatform: event.target.value as StudioSettings["outputPlatform"] })}><option value="generic">General vertical</option><option value="tiktok">TikTok</option><option value="instagram-reels">Instagram Reels</option><option value="youtube-shorts">YouTube Shorts</option></select></label><div><span>SHARED 9:16 PROFILE</span><strong>{settings.outputHeight === 1920 ? "1080 × 1920 · 30 fps" : "720 × 1280 · 30 fps"}</strong></div><div><span>FORMAT</span><strong>{outputFormat ? outputFormat.startsWith("webm") ? "WebM" : "MP4" : "Not supported"}</strong></div><div><span>MEDIA</span><strong>Local device only</strong></div></div>
                 <p className="studio-profile-note">Targets share one vertical encoding profile; the target label is added to the filename, not a guarantee of platform approval. Confirm current upload rules before posting.</p>
-                {project.clips.length > 0 && <div className="studio-export-buttons"><button type="button" className="studio-button studio-button--secondary" onClick={() => void exportOne()} disabled={isExporting || !activeClip || !outputFormat}><Download size={16} />Export selected clip</button><button type="button" className="studio-button studio-button--dark" onClick={() => void exportBatch()} disabled={isExporting || !outputFormat || !selectedForBatch.length || estimatedZipBytes > ZIP_LIMIT}><Package size={16} />{isExporting ? "Rendering batch…" : "Render selected + ZIP"}</button></div>}
-                {estimatedZipBytes > ZIP_LIMIT && <p className="studio-inline-warning"><AlertTriangle size={14} />Estimated batch exceeds the 64 MB ZIP memory budget. Use 720p or export clips individually to a file.</p>}
+                {project.clips.length > 0 && <div className="studio-export-buttons"><button type="button" className="studio-button studio-button--secondary" onClick={() => void exportOne()} disabled={isExporting || !activeClip || !outputFormat}><Download size={16} />Export selected clip</button><button type="button" className="studio-button studio-button--dark" onClick={() => void exportBatch()} disabled={isExporting || !outputFormat || !selectedForBatch.length || estimatedZipBytes > ZIP_SOURCE_LIMIT}><Package size={16} />{isExporting ? "Rendering batch…" : "Render selected + ZIP"}</button></div>}
+                {estimatedZipBytes > ZIP_SOURCE_LIMIT && <p className="studio-inline-warning"><AlertTriangle size={14} />Estimated batch exceeds the safe ZIP memory budget after accounting for video buffers and ZIP copies. Use 720p or export clips individually to a file.</p>}
                 {!outputFormat && <p className="studio-inline-warning"><AlertTriangle size={14} />No supported WebCodecs encoder pair is available. Try an up-to-date desktop Chromium browser.</p>}
                 {isExporting && exportProgress && <div className="studio-progress-block"><ProgressCard label={exportProgress.phase} progress={exportProgress.progress} /><p>{exportProgress.detail}</p><button type="button" className="studio-text-button" onClick={() => exportController.current?.abort()}><X size={14} />Cancel processing</button></div>}
               </section>

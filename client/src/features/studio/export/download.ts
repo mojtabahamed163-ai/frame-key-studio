@@ -42,6 +42,10 @@ export function uniqueFilename(filename: string, used: Set<string>): string {
   return candidate;
 }
 
+export function replaceOutputForClip<T extends { clipId: string }>(current: T[], next: T): T[] {
+  return [next, ...current.filter((item) => item.clipId !== next.clipId)];
+}
+
 export function createZip(
   files: Array<{ name: string; data: Uint8Array }>
 ): Blob {

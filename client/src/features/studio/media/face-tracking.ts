@@ -80,16 +80,27 @@ export async function trackLargestFace(
   if (!("createImageBitmap" in window) || !("WebGLRenderingContext" in window)) {
     throw new Error("This browser does not provide WebGL face detection. Manual framing remains available.");
   }
+  const throwIfCancelled = () => {
+    if (signal.aborted) throw new DOMException("Face tracking cancelled.", "AbortError");
+  };
   const tf = await import("@tensorflow/tfjs-core");
+  throwIfCancelled();
   await import("@tensorflow/tfjs-backend-webgl");
+  throwIfCancelled();
   if (!(await tf.setBackend("webgl"))) throw new Error("WebGL could not start. Use manual framing instead.");
   await tf.ready();
+  throwIfCancelled();
   const faceDetection = await import("@tensorflow-models/face-detection");
+  throwIfCancelled();
   const detector = await faceDetection.createDetector(faceDetection.SupportedModels.MediaPipeFaceDetector, {
     runtime: "tfjs",
     modelType: "full",
     maxFaces: 3,
   });
+  if (signal.aborted) {
+    detector.dispose();
+    throw new DOMException("Face tracking cancelled.", "AbortError");
+  }
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");
   video.preload = "metadata";
@@ -114,8 +125,10 @@ export async function trackLargestFace(
         const sought = waitForEvent(video, "seeked");
         video.currentTime = time;
         await sought;
+        throwIfCancelled();
       }
       const faces = await detector.estimateFaces(video, { flipHorizontal: false }) as DetectedFace[];
+      throwIfCancelled();
       const ranked = faces
         .filter((face) => face.box && face.box.width > 0 && face.box.height > 0)
         .map((face) => {

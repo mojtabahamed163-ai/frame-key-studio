@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { unzipSync } from "fflate";
-import { createZip, safeFileStem, uniqueFilename } from "./download";
+import { createZip, replaceOutputForClip, safeFileStem, uniqueFilename } from "./download";
 
 describe("export filenames and ZIP archives", () => {
+  it("keeps only the newest in-memory output for a clip", () => {
+    const first = { clipId: "clip-1", result: "large-blob-1" };
+    const second = { clipId: "clip-1", result: "large-blob-2" };
+    const other = { clipId: "clip-2", result: "large-blob-3" };
+    expect(replaceOutputForClip([first, other], second)).toEqual([second, other]);
+  });
+
   it("makes repeated clip titles distinct without changing their extension", () => {
     const used = new Set<string>();
     expect(uniqueFilename("same-title.mp4", used)).toBe("same-title.mp4");
