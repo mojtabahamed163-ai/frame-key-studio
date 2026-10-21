@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   classifyChunkWord,
   expandLongTimestampedChunk,
@@ -10,6 +11,7 @@ import {
   TRANSCRIPTION_OVERLAP_SECONDS,
   wordBelongsToChunkWindow,
 } from "./analyze-video";
+import { nextSampleWithAbort } from "./analyze-video";
 import type { TranscriptWord } from "../types";
 
 const word = (text: string, start: number, end: number): TranscriptWord => ({ id: `${text}-${start}`, text, start, end });
@@ -85,8 +87,8 @@ describe("local Whisper audio-window boundaries", () => {
     const samples = new Float32Array(5_700);
     samples.fill(0.08, 5_400);
     expect(hasSustainedAudioActivityAfterLastWord(samples, 1_000, 0, 5.1, 5.7)).toBe(true);
-
-import { nextSampleWithAbort } from "./analyze-video";
+  });
+});
 
 describe("abortable media sample reads", () => {
   it("rejects immediately when analysis is already cancelled", async () => {
