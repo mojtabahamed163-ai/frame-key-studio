@@ -1,75 +1,167 @@
 # Frame & Key Studio
 
-Frame & Key Studio is a browser-based short-form video editing studio focused on turning landscape recordings into vertical clips for real-estate marketing, social content, education, and creator workflows.
+Frame & Key Studio هو محرر فيديو محلي داخل المتصفح يحوّل التسجيلات الطويلة إلى مقاطع رأسية قصيرة قابلة للتحرير. صُمم للاستخدام في التسويق العقاري، المحتوى الاجتماعي، التعليم، والبودكاست وسير عمل صناع المحتوى.
 
-The Studio workflow runs locally in the user's browser. It reads the selected local video, extracts audio samples, runs optional speech transcription and translation in Web Workers, creates editable clip suggestions and captions, reframes the selected section into a portrait canvas, burns optional captions/title/logo overlays, and exports a local media file. The Studio does not upload video/audio bytes, video frames, generated captions, or transcripts to the application API or object storage.
+## الحالة الحالية
 
-The repository also contains an Express/tRPC application shell and a public inquiry form. That server-side shell is separate from the local media path and requires external platform configuration when the complete website is run.
+المشروع يعمل على الفرع `feat/brand-kit-templates-qa`. يحتوي هذا الفرع على محرر Studio المحلي، وBrand Kit، و15 قالب فيديو جاهز، وتقرير قبول نهائي موثق بالأدلة.
 
-## What is implemented
+أثبت اختبار القبول الفعلي ما يلي على Chrome 156 داخل Linux Cloud Browser:
 
-The code and current tests cover local video metadata inspection; audio extraction, downmixing, resampling, cancellation, and bounded analysis windows; browser-side Whisper transcription in a Web Worker; transcript-based clip and hook suggestions; manual clip boundaries; caption editing; SRT/VTT import/export; caption styles; title/logo/brand controls; local English-to-French/Spanish/German translation; portrait 9:16 framing; full-video/studio-background mode; optional face-assisted framing with manual fallback; browser-side export; sequential multi-clip rendering; ZIP creation for small batches; and IndexedDB/optional OPFS project persistence.
+- رفع فيديو MP4 واقعي مدته 8 دقائق وحجمه نحو 37 MB.
+- تشغيل Whisper محليًا واستخراج 225 كلمة موقّتة.
+- إنشاء 3 مقاطع مقترحة قابلة للتحرير.
+- تطبيق قالب `Property Showcase` وBrand Kit.
+- معاينة مقطع رأسي مع الكابتشن.
+- تصدير WebM فعلي بصيغة VP9 + Opus بدقة 1080×1920 و30 fps.
+- التحقق من وجود الفيديو والصوت والكابتشن وفك ترميز الملف بنجاح.
 
-The current repository checks are green: `pnpm check`, `pnpm test -- --run` (90 tests in 13 files), and `pnpm build` pass in the reviewed environment. See `docs/test-results-2026-11-03.md` for the exact run and scope.
+لم يثبت تصدير MP4 في بيئة القبول تلك؛ فقد أبلغ WebCodecs عدم دعم H.264 وAAC، ولذلك كان WebM هو مسار التصدير المثبت. كما لم تُختبر Edge أو Firefox أو Chrome Android أو Safari في تلك الجلسة. راجع [تقرير القبول النهائي](docs/FINAL_ACCEPTANCE_REPORT.md) قبل استخدام عبارات دعم أو توافق تسويقية.
 
-## Partial capabilities and known limits
+## طريقة استخدام Studio
 
-Whisper output requires human review. Clip suggestions are rule-based transcript analysis, not a guaranteed engagement prediction. Face-assisted framing tracks visible faces but does not identify the speaker; small, compressed, dark, occluded, synthetic, or unusual faces may fall back to manual framing. Translation currently supports English source text to French, Spanish, or German and uses approximate phrase-level timing. 1080x1920 is an output canvas and cannot restore detail lost by a 16:9-to-9:16 crop. Long exports are safest in browsers with direct-to-file saving; without it, memory-limited fallbacks and a 64 MiB ZIP safety budget apply. Projects are local to the browser and are not synchronized between devices. The repository has no production URL and intentionally contains no payment or subscription system; it is being prepared as a source-code/product asset transfer, not as a completed billing SaaS.
+1. شغّل المشروع محليًا وافتح `/studio`.
+2. اختر فيديو من جهازك. يبقى المصدر داخل المتصفح ولا يُرفع إلى API المشروع.
+3. اختر تحليل الكلام المحلي باستخدام Whisper أو تخطَّ التحليل وأنشئ قصًا يدويًا.
+4. راجع الكلمات الموقّتة والمقاطع المقترحة، ثم اختر مقطعًا وعدّل بدايته ونهايته.
+5. افتح شاشة التحرير لمراجعة الكابتشن والنص والعنوان والوصف والوسوم.
+6. اختر تنسيق الفيديو الرأسي 9:16، ووضع ملء الإطار أو خلفية الاستوديو، والتأطير اليدوي أو المساعد بالوجه.
+7. طبّق Brand Kit أو قالبًا جاهزًا.
+8. راجع المعاينة ثم صدّر المقطع واحفظ الملف محليًا.
 
-## Technology stack
+## المعالجة المحلية والخصوصية
 
-The project uses React 19, TypeScript 5.9, Vite 7, Express 4, tRPC 11, Drizzle ORM/MySQL, Mediabunny 1.61.4, Transformers.js 4.3.1, TensorFlow.js/Face Detection, Web Workers, WebAssembly, IndexedDB, optional OPFS, Vitest, and fflate.
+يقرأ Studio ملف الفيديو المحدد داخل المتصفح، يستخرج الصوت محليًا، ويعالج التحليل في Web Workers. لا تُرسل بايتات الفيديو أو الصوت أو الإطارات أو التفريغ إلى API المشروع أو التخزين السحابي ضمن مسار Studio المحلي. بيانات المشاريع والإعدادات والتفريغ تحفظ محليًا في IndexedDB، مع دعم OPFS اختياريًا للمصادر عندما تتوفر قدرات المتصفح.
 
-## Models and first-use downloads
+تحليل الكلام يستخدم Whisper محليًا. اللغة الإنجليزية تستخدم نموذج Whisper Base English، بينما تستخدم اللغات الأخرى Whisper Tiny. تنزيل النماذج اختياري ويتم عند تشغيل الميزة، وقد يستغرق وقتًا في أول استخدام. يمكن للتفريغ إنشاء كلمات موقّتة، ويستخدم Studio هذه التوقيتات لاستخراج الجمل والمقاطع المقترحة. يجب مراجعة التفريغ والأسماء والأرقام قبل النشر.
 
-Model weights are not committed to Git. They are fetched from public model repositories only when the relevant feature is used and may be cached by the browser.
+## التحرير والكابتشن
 
-| Feature | Model | Scope | Approximate size / note |
-|---|---|---|---|
-| English transcription | `Xenova/whisper-base.en` | English source speech | Not bundled; download varies by model files/runtime |
-| Other-language transcription | `Xenova/whisper-tiny` | Multilingual transcription | Repository notice estimates about 41 MB for selected q8 ONNX weights before auxiliary files |
-| Translation | `onnx-community/opus-mt-en-fr`, `en-es`, `en-de` | English to French/Spanish/German | About 214.5–234.8 MiB per selected language before auxiliary/runtime files |
-| Face-assisted framing | MediaPipe through TensorFlow.js | Optional local visible-face tracking | Local inference with manual fallback |
+يوفر Studio نقاط بداية ونهاية قابلة للتعديل، ومعاينة للمقطع، وتشغيل النطاق، واقتراحات مبنية على الجمل والفواصل. يمكن تحرير نصوص الكابتشن وتوقيتها، واستيراد وتصدير SRT وVTT، وحرق الكابتشن داخل الفيديو. توجد إعدادات للكابتشن تشمل الخط، التوقيت، الموضع، المحاذاة، ولون النص والخلفية.
 
-Translation uses CPU/WebAssembly and does not require WebGPU. First use may be slow and requires access to the public model host.
+تستخدم المعاينة والتصدير لوحة 9:16. خيار 1080×1920 لا يستعيد التفاصيل المفقودة عند قص مصدر منخفض الدقة من 16:9 إلى إطار رأسي.
 
-## Installation and development
+## Brand Kit
 
-Requirements are a Node.js 22-compatible runtime, pnpm 10, and a modern browser. The local Studio media path does not require a database.
+Brand Kit هو نظام هوية بصري محلي يمكن تطبيقه على المقطع الحالي وحفظه وإعادة استخدامه. يشمل:
+
+- اسم العلامة.
+- الشعار الموضعي، عندما يضيفه المستخدم.
+- اللون الأساسي ولون التمييز ولون النص والخلفية.
+- الخط وإعدادات توقيت الكابتشن.
+- موضع الشعار والكابتشن ومحاذاة النص.
+
+يحفظ Brand Kit في المتصفح ويمكن تصديره واستيراده بصيغة JSON. تدعم طبقة التخزين التحقق من بيانات الاستيراد وحجمها، ولا ترفع الهوية أو الشعار إلى الخادم.
+
+## القوالب الجاهزة والقوالب المخصصة
+
+يحتوي Studio على 15 قالبًا جاهزًا قابلة للتطبيق والتعديل، موزعة على المجالات التالية:
+
+### العقارات
+
+- Property Showcase
+- House Tour
+- Property Advertisement
+
+### المطاعم
+
+- Food Showcase
+- Restaurant Promotion
+- Menu Highlight
+
+### البودكاست
+
+- Podcast Interview
+- Talking Head
+- Two-Person Conversation
+
+### التعليم
+
+- Quick Lesson
+- Educational Tips
+- Explainer
+
+### التسويق
+
+- Product Advertisement
+- Promotional Offer
+- Service Advertisement
+
+القالب ليس صورة معاينة فقط؛ عند تطبيقه تتغير إعدادات التصميم الفعلية المستخدمة في المعاينة والتصدير. يحافظ التطبيق على المصدر والتفريغ ونقاط القص والتأطير عند تبديل القالب. يمكن أيضًا حفظ القوالب المخصصة محليًا وإعادة استخدامها وحذفها.
+
+## المعاينة والتصدير
+
+يدعم Studio التصدير المحلي الفردي والتصدير المتسلسل لمقاطع متعددة، إضافة إلى ZIP للدفعات الصغيرة ضمن حد حماية الذاكرة. الصيغة التي أُثبت نجاحها في اختبار القبول الحالي هي WebM/VP9 + Opus. يختار Studio الصيغة بناءً على قدرات WebCodecs الفعلية في المتصفح؛ لا ينبغي افتراض توفر MP4 لمجرد أن المتصفح يستطيع قراءة ملف MP4.
+
+التصدير محلي ولا يرسل الوسائط أو الكابتشن إلى نموذج مدفوع أو تخزين سحابي. على الأجهزة المحدودة، ابدأ بـ720p أو صدّر المقاطع فرديًا. قد يتجاوز ZIP حد 64 MiB عند تحديد عدة مقاطع بدقة 1080p.
+
+## المتطلبات
+
+- Node.js متوافق مع 22.
+- pnpm `10.18.0`.
+- متصفح حديث يدعم Web Workers وWebAssembly وWebCodecs المناسبة لمسار التصدير.
+- اتصال إنترنت اختياري عند تشغيل ميزة تتطلب تنزيل نموذج عام لأول مرة.
+- لا تحتاج مسارات Studio المحلية إلى قاعدة بيانات. تشغيل غلاف التطبيق الكامل قد يتطلب إعدادات المنصة والبيئة الموضحة في `BUYER_HANDOFF.md`.
+
+## التثبيت والتشغيل
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+ثم افتح:
+
+```text
+http://localhost:3000/studio
+```
+
+أوامر مفيدة أخرى:
+
+```bash
+pnpm dev:static
+pnpm build:static
+pnpm start
+```
+
+يحتاج `pnpm start` إلى إعدادات البيئة الخاصة بغلاف الخادم. مسار Studio المحلي منفصل عن نموذج الاستفسار العام ومسارات OAuth والمنصة.
+
+## الاختبارات والبناء
+
+شغّل مجموعة التحقق الكاملة:
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
 pnpm test -- --run
 pnpm build
-pnpm dev
-```
-
-Open `http://localhost:3000/studio`. Static scripts are available with `pnpm build:static` and `pnpm dev:static`. The complete server shell can be started with `pnpm start` after the required environment configuration; see `BUYER_HANDOFF.md`.
-
-## Testing
-
-```bash
-pnpm check
-pnpm test -- --run
-pnpm build
 git diff --check
 ```
 
-The current canonical automated result is 13 passing test files and 90 passing tests. These are unit/regression and server-route tests, not a substitute for browser media acceptance. Use `docs/manual-acceptance-checklist.md` for the buyer procedure. Historical browser/media reports remain in `docs/` with their original dates.
+النتيجة الموثقة الأخيرة باستخدام pnpm `10.18.0` هي:
 
-## External services and privacy boundary
+- `pnpm install --frozen-lockfile`: نجح.
+- `pnpm check`: نجح.
+- `pnpm test -- --run`: نجح؛ 14 ملف اختبار و92 اختبارًا.
+- `pnpm build`: نجح.
+- `git diff --check`: نجح.
 
-The Studio media path is local. The application shell still has external boundaries: `/api/leads` stores inquiry fields in the configured database and may notify the owner through Manus; OAuth uses the configured Manus OAuth service; inherited platform helpers can use Manus/Forge APIs for platform features; and Google Fonts are requested by the stylesheet. No secret values are committed. Runtime values are read from environment variables and are intended to remain server-side.
+هذه اختبارات آلية واختبار قبول متصفح موثق، وليست ضمانًا لتوافق كل متصفح أو جهاز. لم تُختبر Firefox وEdge وChrome Android وSafari في جلسة القبول الأخيرة.
 
-## Browser and media limitations
+## توثيق القبول والأدلة
 
-Historical repository reports document Chromium/Sandbox media checks. The current review did not independently test Chrome, Edge, Firefox, or Safari sessions, so the acceptance checklist marks untested combinations as `Needs testing`. Codec support, WebCodecs, File System Access, WebAssembly performance, WebGL, OPFS, and memory vary by browser/device. Use 720p and individual exports first on constrained hardware.
+- [تقرير القبول النهائي](docs/FINAL_ACCEPTANCE_REPORT.md)
+- [تقرير Brand Kit والقوالب السابق](docs/brand-kit-template-qa-report-2026-11-03.md)
+- [إطار الفيديو المصدّر](docs/qa-evidence/real-webm-frame.png)
+- [بيانات ffprobe ونتيجة فحص ffmpeg](docs/qa-evidence/real-webm-metadata.txt)
+- [قائمة القبول اليدوي](docs/manual-acceptance-checklist.md)
+- [إشعارات الأطراف الثالثة](THIRD_PARTY_NOTICES.md)
+- [دليل التسليم](BUYER_HANDOFF.md)
 
-## Third-party notices and transfer boundary
+## التقنية وإشعارات الأطراف الثالثة
 
-`THIRD_PARTY_NOTICES.md` lists the main libraries and models, including Mediabunny MPL-2.0, Transformers.js/TensorFlow.js/face detection Apache-2.0, fflate MIT, Whisper notices, and OPUS-MT CC BY 4.0 attribution. Keep those notices with redistributed builds and re-check upstream terms before redistributing model weights.
+يستخدم المشروع React 19 وTypeScript 5.9 وVite 7 وExpress 4 وtRPC 11 وMediabunny وTransformers.js وTensorFlow.js وWeb Workers وWebAssembly وIndexedDB وOPFS الاختياري وVitest وfflate.
 
-The package declares MIT in `package.json`, but the repository does not currently include a standalone `LICENSE` file. This is an ownership/transfer item and was not silently changed. A buyer receives transferable rights in original project code, not exclusive ownership of third-party libraries, model weights, platform accounts, or external services.
+الأوزان والنماذج لا تُضمّن في Git، بل تُجلب من مستودعات عامة عند تشغيل الميزة ذات الصلة وقد تُخزّن مؤقتًا في المتصفح. يحتوي `THIRD_PARTY_NOTICES.md` على مصادر المكتبات والنماذج وتراخيصها. لا تغيّر هذه الإشعارات عند إعادة توزيع المشروع.
 
-See `BUYER_HANDOFF.md` for the transfer runbook and `docs/test-results-2026-11-03.md` for the current verification record.
+يعلن `package.json` عن MIT، لكن لا يوجد ملف `LICENSE` مستقل في المستودع حاليًا. لم يتم تغيير حقوق الملكية أو إضافة ترخيص جديد ضمن هذه المرحلة.
