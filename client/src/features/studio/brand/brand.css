@@ -1,0 +1,46 @@
+.studio-brand-library { margin-top: 13px; }
+.brand-library-tabs { display: flex; gap: 6px; margin: 0 -2px 13px; border-bottom: 1px solid var(--line); }
+.brand-library-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 0 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 8px; font-weight: 800; }
+.brand-library-tabs button.is-active { color: var(--forest); border-bottom-color: var(--copper); }
+.brand-create-row { display: flex; gap: 7px; margin-top: 11px; }
+.brand-create-row input { min-width: 0; flex: 1; min-height: 34px; padding: 6px 8px; border: 1px solid #d7d1c6; background: #fffefa; color: var(--ink); font-size: 9px; }
+.brand-library-actions { display: flex; justify-content: flex-end; }
+.brand-kit-list { display: grid; gap: 7px; margin-top: 11px; }
+.brand-kit-card { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); background: rgba(255,253,248,.65); }
+.brand-kit-card__swatches { display: flex; width: 31px; flex-wrap: wrap; gap: 3px; }
+.brand-kit-card__swatches span { width: 14px; height: 14px; border: 1px solid rgba(0,0,0,.09); }
+.brand-kit-card__body { min-width: 0; flex: 1; }
+.brand-kit-card__body strong, .brand-kit-card__body small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-kit-card__body strong { font-size: 9px; }
+.brand-kit-card__body small { margin-top: 3px; color: var(--muted); font-size: 7px; }
+.brand-kit-card__actions { display: flex; gap: 2px; }
+.brand-kit-card__actions button { display: grid; place-items: center; width: 25px; height: 25px; border: 0; background: transparent; color: var(--forest); }
+.brand-kit-card__actions button:hover { background: #e9eee5; }
+.template-library-toolbar { display: flex; align-items: center; gap: 7px; margin-top: 11px; }
+.template-library-toolbar > select { min-height: 34px; padding: 0 7px; border: 1px solid #d7d1c6; background: #fffefa; color: var(--ink); font-size: 8px; }
+.template-library-toolbar .brand-create-row { flex: 1; margin-top: 0; }
+.template-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+.template-card { overflow: hidden; border: 1px solid var(--line); background: #fffefa; }
+.template-card__preview { position: relative; min-height: 110px; overflow: hidden; padding: 11px; display: flex; flex-direction: column; justify-content: flex-end; }
+.template-card__preview b { position: absolute; top: 9px; right: 10px; font: 700 16px var(--serif); }
+.template-card__preview strong { position: relative; z-index: 1; max-width: 88%; font-size: 10px; line-height: 1.15; }
+.template-card__preview i { position: relative; z-index: 1; width: 36%; height: 3px; margin-top: 6px; background: currentColor; }
+.template-card__shape { position: absolute; opacity: .86; border: 2px solid; }
+.template-card__shape--corner { top: 12px; left: 12px; width: 38px; height: 38px; border-right: 0; border-bottom: 0; }
+.template-card__shape--split { inset: 57% 0 0; opacity: .45; }
+.template-card__shape--lower-third { left: 9%; right: 9%; bottom: 12%; height: 4px; }
+.template-card__shape--badge { top: 14px; right: 16px; width: 28px; height: 28px; border-radius: 50%; }
+.template-card__shape--minimal { display: none; }
+.template-card__body { padding: 8px; }
+.template-card__body > div:first-child { display: flex; justify-content: space-between; gap: 5px; }
+.template-card__body strong { font-size: 8px; }
+.template-card__body small { color: var(--muted); font-size: 7px; }
+.template-card__body p { min-height: 31px; margin: 6px 0; color: var(--muted); font-size: 7px; line-height: 1.45; }
+.template-card__actions { display: flex; gap: 5px; align-items: center; }
+.template-card__actions .studio-button { min-height: 28px; padding: 0 8px; font-size: 7px; }
+.studio-template-overlay { position: absolute; z-index: 1; pointer-events: none; opacity: .22; }
+.studio-template-overlay--corner { top: 7%; left: 6%; width: 18%; height: 12%; border-top: 4px solid; border-left: 4px solid; background: transparent !important; }
+.studio-template-overlay--split { right: 0; bottom: 0; left: 0; height: 22%; }
+.studio-template-overlay--lower-third { right: 5%; bottom: 18%; left: 5%; height: 4px; }
+.studio-template-overlay--badge { top: 8%; right: 8%; width: 14%; aspect-ratio: 1; border-radius: 50%; }
+@media (max-width: 680px) { .template-grid { grid-template-columns: 1fr; } .template-library-toolbar { align-items: stretch; flex-direction: column; } .template-library-toolbar .brand-create-row { width: 100%; } }

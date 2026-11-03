@@ -98,6 +98,7 @@ export function VideoPreview({
           }}
           style={settings.framingMode === "full" ? undefined : { objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%` }}
         />
+        {settings.templateLayout && settings.templateLayout !== "minimal" && <div className={`studio-template-overlay studio-template-overlay--${settings.templateLayout}`} style={{ backgroundColor: settings.templateLayout === "split" ? settings.accentColor : settings.primaryColor, borderColor: settings.accentColor }} aria-hidden="true" />}
         {logoUrl && <img className={`studio-preview-logo studio-preview-logo--${settings.logoPosition}`} src={logoUrl} alt="" aria-hidden="true" />}
         {settings.showTitleCard && clip && titleText && currentTime >= clip.start && currentTime < clip.start + 2.8 && <div className="studio-preview-title" style={{ backgroundColor: settings.primaryColor, fontFamily: settings.fontFamily }}><span style={{ backgroundColor: settings.accentColor }} /><strong>{titleText}</strong></div>}
         {settings.showCaptions && activeCue && <div className={`studio-preview-caption caption-${settings.captionStyle}`} style={{ backgroundColor: settings.captionStyle === "editorial" ? "transparent" : settings.primaryColor, fontFamily: settings.fontFamily }} aria-live="off">

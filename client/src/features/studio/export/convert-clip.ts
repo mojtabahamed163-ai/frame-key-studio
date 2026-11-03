@@ -93,10 +93,11 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   const fontFamily = settings.fontFamily;
   const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor) ? settings.primaryColor : "#203A31";
   const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor) ? settings.accentColor : "#C9794B";
+  const textColor = /^#[0-9a-f]{6}$/i.test(settings.textColor ?? "") ? settings.textColor as string : "#FFFFFF";
   ctx.save();
-  const fontSize = Math.max(34, Math.round(height * (style === "bold" ? 0.039 : 0.032)));
-  ctx.font = `${style === "bold" ? 800 : 650} ${fontSize}px ${fontFamily}`;
-  ctx.textAlign = "center";
+  const fontSize = Math.max(34, Math.round(height * (style === "bold" ? 0.039 : 0.032) * ((settings.captionFontSize ?? 100) / 100)));
+  ctx.font = `${settings.captionWeight ?? (style === "bold" ? 800 : 650)} ${fontSize}px ${fontFamily}`;
+  ctx.textAlign = settings.captionAlign ?? "center";
   ctx.textBaseline = "middle";
   const maxWidth = ctx.canvas.width * 0.84;
   const tokens = cue.text.split(/\s+/).filter(Boolean);
@@ -109,11 +110,12 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   }
   if (line) lines.push(line);
   const visibleLines = lines.slice(0, 3);
-  const lineHeight = fontSize * 1.22;
+  const lineHeight = fontSize * (settings.captionLineHeight ?? 1.22);
   const blockHeight = visibleLines.length * lineHeight + fontSize * 0.72;
   const blockWidth = Math.min(maxWidth + 48, Math.max(...visibleLines.map((value) => ctx.measureText(value).width), 0) + 48);
-  const x = (ctx.canvas.width - blockWidth) / 2;
-  const y = ctx.canvas.height * 0.72 - blockHeight / 2;
+  const x = settings.captionAlign === "left" ? ctx.canvas.width * 0.08 : settings.captionAlign === "right" ? ctx.canvas.width - blockWidth - ctx.canvas.width * 0.08 : (ctx.canvas.width - blockWidth) / 2;
+  const positionRatio = settings.captionPosition === "top" ? 0.22 : settings.captionPosition === "center" ? 0.5 : 0.72;
+  const y = ctx.canvas.height * positionRatio - blockHeight / 2;
   if (style !== "editorial") {
     ctx.globalAlpha = style === "bold" ? 0.94 : 0.84;
     ctx.fillStyle = primaryColor;
@@ -129,9 +131,9 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
     const baseline = y + fontSize * 0.38 + lineIndex * lineHeight;
     lineWords.forEach((word, wordIndex) => {
       const matched = cue.words.find((item) => item.text.replace(/[.,!?;:]$/, "").toLowerCase() === word.replace(/[.,!?;:]$/, "").toLowerCase() && absoluteTime >= item.start && absoluteTime <= item.end);
-      ctx.fillStyle = matched ? accentColor : "#FFFFFF";
+      ctx.fillStyle = matched ? accentColor : textColor;
       ctx.shadowColor = primaryColor;
-      ctx.shadowBlur = style === "editorial" ? 5 : 0;
+      ctx.shadowBlur = settings.captionShadow || style === "editorial" ? 5 : 0;
       ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
       cursor += widths[wordIndex];
     });
@@ -210,6 +212,18 @@ async function measurePeak(file: File, start: number, end: number, signal: Abort
     }
     return peak;
   } finally { input.dispose(); }
+}
+
+function drawTemplateOverlay(ctx: CanvasRenderingContext2D, settings: StudioProject["settings"]): void {
+  const layout = settings.templateLayout;
+  if (!layout || layout === "minimal") return;
+  const width = ctx.canvas.width; const height = ctx.canvas.height;
+  ctx.save(); ctx.globalAlpha = 0.88; ctx.fillStyle = settings.accentColor;
+  if (layout === "corner") { ctx.fillRect(width * 0.06, height * 0.07, width * 0.18, 5); ctx.fillRect(width * 0.06, height * 0.07, 5, height * 0.12); }
+  if (layout === "split") { ctx.globalAlpha = 0.3; ctx.fillRect(0, height * 0.78, width, height * 0.22); ctx.globalAlpha = 0.9; ctx.fillRect(width * 0.06, height * 0.78, width * 0.32, 6); }
+  if (layout === "lower-third") { ctx.fillStyle = settings.primaryColor; ctx.globalAlpha = 0.82; ctx.fillRect(width * 0.05, height * 0.82, width * 0.9, 4); }
+  if (layout === "badge") { ctx.beginPath(); ctx.arc(width * 0.86, height * 0.15, width * 0.07, 0, Math.PI * 2); ctx.fillStyle = settings.accentColor; ctx.fill(); }
+  ctx.restore();
 }
 
 function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
@@ -334,6 +348,7 @@ export async function exportClip(options: {
             const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
             drawCaption(context, cue, absoluteTime, height, project.settings);
           }
+          drawTemplateOverlay(context, project.settings);
           drawTitleCard(context, clip, absoluteTime, project.settings);
           drawLogo(context, logo, project.settings.logoPosition, width, height);
           const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });

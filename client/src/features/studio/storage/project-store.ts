@@ -1,9 +1,11 @@
 import { DEFAULT_SETTINGS, type BrandSettings, type StudioProject, type StudioSettings } from "../types";
 
 const DB_NAME = "framekey-studio-local";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PROJECTS = "projects";
 const PREFERENCES = "preferences";
+export const BRAND_KITS = "brandKits";
+export const USER_TEMPLATES = "userTemplates";
 let writeQueue: Promise<void> = Promise.resolve();
 
 type BrowserStorageManager = StorageManager & {
@@ -36,6 +38,8 @@ function openDatabase(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PREFERENCES)) db.createObjectStore(PREFERENCES, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(BRAND_KITS)) db.createObjectStore(BRAND_KITS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(USER_TEMPLATES)) db.createObjectStore(USER_TEMPLATES, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Could not open local project storage."));

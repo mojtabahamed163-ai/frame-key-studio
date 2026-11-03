@@ -5,6 +5,7 @@ import {
   Package, Plus, ScanFace, Scissors, ShieldCheck, Sparkles, Upload, X,
 } from "lucide-react";
 import { BrandControls } from "@/features/studio/components/BrandControls";
+import { BrandKitTemplates } from "@/features/studio/components/BrandKitTemplates";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
@@ -20,6 +21,7 @@ import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, ty
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
 import "@/features/studio/studio.css";
+import "@/features/studio/brand/brand.css";
 
 const LANGUAGE_OPTIONS = [
   ["auto", "Auto-detect"], ["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"],
@@ -910,6 +912,7 @@ export default function Studio() {
                 <div className="studio-codec-note"><span className={outputFormat ? "codec-ready" : "codec-warn"} />{outputFormat ? `${outputFormat === "mp4" ? "MP4 / H.264 + AAC" : outputFormat === "webm-vp8" ? "WebM / VP8 + Opus" : "WebM / VP9 + Opus"} detected on this device` : "This browser does not report a compatible local video and audio encoder."}</div>
               </section>
               <BrandControls settings={settings} onChange={changeSettings} />
+              <BrandKitTemplates settings={settings} onChange={changeSettings} onNotice={setNotice} />
               {activeClip && <div className="studio-step-actions studio-step-actions--sidebar"><button type="button" className="studio-button studio-button--secondary" onClick={() => goToStep("select")}><ArrowLeft size={15} />Moments</button><button type="button" className="studio-button studio-button--dark" onClick={() => goToStep("export")}>Export <ArrowRight size={15} /></button></div>}
             </aside>
           </div>}

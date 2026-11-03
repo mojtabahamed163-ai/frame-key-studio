@@ -62,6 +62,9 @@ export interface BrandSettings {
   brandName: string;
   primaryColor: string;
   accentColor: string;
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
   captionStyle: CaptionStyle;
   fontFamily: string;
   logoPosition: LogoPosition;
@@ -82,6 +85,14 @@ export interface StudioSettings extends BrandSettings {
   outputHeight: 1280 | 1920;
   outputPlatform: OutputPlatform;
   targetLanguage: "none" | "fr" | "es" | "de";
+  templateId?: string;
+  templateLayout?: "corner" | "split" | "lower-third" | "minimal" | "badge";
+  captionFontSize?: number;
+  captionWeight?: number;
+  captionAlign?: "left" | "center" | "right";
+  captionLineHeight?: number;
+  captionShadow?: boolean;
+  captionPosition?: "top" | "center" | "bottom";
 }
 
 export interface StudioProject {
@@ -122,6 +133,9 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   brandName: "Frame & Key",
   primaryColor: "#203A31",
   accentColor: "#C9794B",
+  secondaryColor: "#F5EFE5",
+  textColor: "#FFFFFF",
+  backgroundColor: "#203A31",
   captionStyle: "clean",
   captionMode: "block",
   fontFamily: "DM Sans, Arial, sans-serif",
@@ -138,4 +152,12 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   outputHeight: 1920,
   outputPlatform: "generic",
   targetLanguage: "none",
+  templateId: "frame-default",
+  templateLayout: "lower-third",
+  captionFontSize: 100,
+  captionWeight: 700,
+  captionAlign: "center",
+  captionLineHeight: 1.22,
+  captionShadow: true,
+  captionPosition: "bottom",
 };
