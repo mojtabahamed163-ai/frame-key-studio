@@ -1,0 +1,22 @@
+Artifact: /home/ubuntu/Downloads/I-born-in-jail-for-a-week.webm
+Created by actual Studio export and saved via browser Save file.
+
+index=0
+codec_name=vp9
+codec_type=video
+width=1080
+height=1920
+r_frame_rate=30/1
+start_time=0.000000
+index=1
+codec_name=opus
+codec_type=audio
+sample_rate=48000
+channels=2
+r_frame_rate=0/0
+start_time=0.002000
+duration=15.222000
+size=17632364
+
+ffmpeg decode check:
+exit_code=0
