@@ -1,5 +1,7 @@
 # Frame & Key Studio — Final End-to-End Acceptance Report
 
+> **Historical record.** This report preserves the browser acceptance run from 2026-10-21 and its original revision. The current canonical automated verification for the present `main` checkout is recorded in `docs/test-results-2026-11-03.md`: 13 test files and 90 tests passed. Historical counts and browser observations below are not a fresh test of every buyer browser/device.
+
 Date: 2026-10-21  
 Candidate branch: `acceptance/release-candidate-2026-10-21`  
 Base under review: `origin/main` at `5474a3e`  
