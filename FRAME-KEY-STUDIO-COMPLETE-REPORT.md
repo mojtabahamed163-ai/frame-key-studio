@@ -4,14 +4,14 @@
 **المستودع:** https://github.com/mojtabahamed163-ai/frame-key-studio  
 **الغرض:** ملف واحد يجمع تقارير الفحص التجاري والفني، نتائج الاختبارات، وثائق التسليم، وقائمة القبول.
 
-> **ملاحظة مهمة:** القسم الخاص بنتائج 2026-11-03 هو المرجع الحالي للاختبارات الآلية. الأقسام الموسومة تاريخية تحتفظ بنتائجها الأصلية ولا تمثل اختباراً جديداً لكل متصفح أو جهاز.
+> **ملاحظة مهمة:** الأقسام المضمّنة أدناه تجمع سجلات من إصدارات مختلفة. سجل `main` في `docs/test-results-2026-11-03.md` يخص commit `efb00be` ويسجل 90 اختباراً في 13 ملفاً. أما نسخة الاستحواذ الحالية فهي الفرع `feat/brand-kit-templates-qa`، مع revision برمجي مرجعي `b9068e9` قبل تحديثات التوثيق، وقد سجلت عند إعادة تشغيلها في 2026-11-06 عدد 92 اختباراً في 14 ملفاً بعد إضافة اختبار Brand Kit. لا تُعامل هذه الأرقام كاختبار واحد لنفس revision، ولا كدعم لكل متصفح أو جهاز.
 
 ## المحتويات
 
 1. [التقرير الكامل للفحص الفني والتجاري السابق](#1-التقرير-الكامل-للفحص-الفني-والتجاري-السابق) — تقرير الفحص الأصلي الذي يضم التقييم التجاري، الوظائف، المخاطر، التراخيص، والوصف التجاري الإنجليزي.
 2. [README الحالي للمشروع](#2-readme-الحالي-للمشروع) — وثيقة المنتج والتشغيل الحالية.
 3. [دليل تسليم المشتري](#3-دليل-تسليم-المشتري) — دليل بنية المشروع والتشغيل ومتطلبات التسليم.
-4. [نتائج الاختبارات الحالية — 2026-11-03](#4-نتائج-الاختبارات-الحالية-—-2026-11-03) — نتائج تم تشغيلها فعلياً على النسخة الحالية.
+4. [نتائج الاختبارات المرجعية لفرع main — 2026-11-03](#4-نتائج-الاختبارات-المرجعية-لفرع-main-—-2026-11-03) — نتائج تم تشغيلها فعلياً على نسخة `main` المرجعية، مع نتيجة الفرع الحالي موثقة في قسم الاختبارات أعلاه.
 5. [قائمة القبول اليدوي](#5-قائمة-القبول-اليدوي) — إجراءات يستطيع المشتري تنفيذها للتحقق من الوظائف.
 6. [قائمة حزمة التسليم](#6-قائمة-حزمة-التسليم) — الملفات التي تدخل أو تستبعد من حزمة التسليم.
 7. [تقرير القبول التاريخي — 2026-10-21](#7-تقرير-القبول-التاريخي-—-2026-10-21) — تقرير تاريخي، محفوظ بتاريخ ونتائج تشغيله الأصلية.
@@ -160,6 +160,10 @@ Frame & Key Studio هو محرر فيديو قصير يعمل أساساً دا�
 - إعداد نمط الكابتشن والعنوان.
 - حفظ إعدادات الهوية محلياً.
 - تطبيق الإعدادات على المقاطع الجديدة.
+- Brand Kit محلي يتضمن اسم العلامة والألوان والخطوط ومواضع الهوية وإعدادات الكابتشن.
+- استيراد وتصدير Brand Kit بصيغة JSON، مع تحقق من بيانات الاستيراد.
+- 15 قالب فيديو جاهزاً مصنفة للعقارات والمطاعم والبودكاست والتعليم والتسويق.
+- حفظ القوالب المخصصة وإعادة استخدامها محلياً.
 - عرض عنوان ووصف ووسوم وعبارات تفاعل مستخرجة/مولدة من النص المحلي وقابلة للتعديل.
 
 ### 3.9 التصدير والتنزيل
@@ -223,23 +227,21 @@ Frame & Key Studio هو محرر فيديو قصير يعمل أساساً دا�
 
 ## 6. الاختبارات والنتائج
 
-### 6.1 ما تم تشغيله في هذا الفحص
+### 6.1 ما تم تشغيله ونسخة كل نتيجة
 
-تم تشغيل الأوامر في نسخة نظيفة من المستودع:
+**سجل `main` التاريخي:** `docs/test-results-2026-11-03.md` يثبت عند commit `efb00be` نجاح `pnpm test -- --run` بـ13 ملف اختبار و90 اختباراً. هذه هي نتيجة `main` وليست نتيجة فرع Brand Kit.
+
+**فرع الاستحواذ الحالي:** في 2026-11-06، وبعد فحص الفرع `feat/brand-kit-templates-qa`، مع revision برمجي مرجعي `b9068e9` قبل تحديثات التوثيق، أُعيد تشغيل:
 
 ```text
-pnpm install --frozen-lockfile       ناجح
+pnpm install --frozen-lockfile       ناجح، pnpm 10.18.0
 pnpm check                           ناجح
-pnpm test -- --run                   ناجح: 13 ملفاً / 90 اختباراً
+pnpm test -- --run                   ناجح: 14 ملفاً / 92 اختباراً
 pnpm build                           ناجح
+ git diff --check                    ناجح
 ```
 
-نتيجة Vitest الحالية:
-
-- Test Files: **13 passed**.
-- Tests: **90 passed**.
-- لا توجد اختبارات فاشلة في التشغيل الحالي.
-- ظهرت رسائل تحذير متوقعة من اختبارات الخادم عند غياب `MANUS_OAUTH_API_URL`، لكنها لم تفشل الاختبارات.
+نتيجة Vitest لهذا الفرع كانت **14 ملفاً و92 اختباراً ناجحاً، دون فشل**. الاختبار الإضافي الظاهر في هذا الفرع هو اختبار Brand Kit؛ لا تُنسب نتيجة 92 إلى `main`. ظهرت رسائل تحذير متوقعة من اختبارات الخادم عند غياب `MANUS_OAUTH_API_URL`، لكنها لم تفشل الاختبارات. كما ظهرت تحذيرات بناء غير مانعة حول `type="module"` وحجم بعض chunks.
 
 ### 6.2 ما تغطيه الاختبارات الحالية
 
@@ -259,7 +261,7 @@ pnpm build                           ناجح
 
 ### 6.3 اختبارات الوسائط الحقيقية الموثقة داخل المستودع
 
-التقارير الموجودة في `docs/` وملفات التشخيص توثق نتائج تشغيل حقيقية سابقة، ويجب عرضها للمشتري بهذه الصياغة: **موثقة في المستودع وليست إعادة تشغيل جديدة في هذا الفحص**.
+التقارير الموجودة في `docs/` وملفات التشخيص توثق نتائج تشغيل حقيقية سابقة، ويجب عرضها للمشتري بهذه الصياغة: **موثقة في المستودع وليست بالضرورة إعادة تشغيل جديدة في هذا الفحص**. ويضاف إليها تقرير `docs/FINAL_ACCEPTANCE_REPORT.md` وأدلة `docs/qa-evidence/` لاختبار القبول الواقعي الموثق بتاريخ 2026-11-03.
 
 التقارير توثق ما يلي:
 
@@ -481,7 +483,7 @@ pnpm build                           ناجح
 - تحديث README ليصف الاستوديو فعلاً بدلاً من تركيزه على قالب WebDev.
 - إضافة جدول Browser Support وحدود واضحة للأحجام والكودكات.
 - إضافة تعليمات تشغيل static-only للاستوديو عند عدم الحاجة إلى قاعدة البيانات.
-- توحيد التوثيق المتضارب حول أعداد الاختبارات القديمة، واعتماد النتيجة الحالية 90 اختباراً.
+- إبقاء نتائج `main` (90 اختباراً) ونتيجة فرع Brand Kit (92 اختباراً) موسومة بوضوح حسب revision، وعدم دمجها في رقم واحد.
 - إضافة script تدقيق بسيط يتحقق من عدم وجود أسرار أو ملفات اختبار كبيرة قبل التسليم.
 - توثيق متغيرات الخادم المطلوبة وما هو اختياري منها.
 - تأجيل تحميل Studio وWorkers وWASM عبر code splitting إن كان الإصلاح لا يغيّر السلوك.
@@ -652,7 +654,7 @@ Commercial use cases include:
 
 ### Current Validation
 
-The repository currently passes TypeScript checking, a production build, and 90 automated tests across 13 test files. Repository validation reports also document real-browser media checks involving portrait framing, full-video studio-background output, caption rendering, local transcription, 720p and 1080p exports, audio preservation, and independent media inspection. These reports should be treated as repository-documented validation; buyers should repeat the acceptance workflow with their own browser and media samples.
+The historical `main` verification record passes TypeScript checking, a production build, and 90 automated tests across 13 test files. The current acquisition branch adds the Brand Kit test and was rerun at 92 tests across 14 files. Repository validation reports also document real-browser media checks involving portrait framing, full-video studio-background output, caption rendering, local transcription, 720p and 1080p exports, audio preservation, and independent media inspection. The current 2026-11-03 acceptance report additionally contains evidence for a real approximately 8-minute, 37 MB source and a saved WebM export. These reports should be treated as revision-scoped repository documentation; buyers should repeat the acceptance workflow with their own browser and media samples.
 
 ### Known Limitations and Transparent Disclosure
 
@@ -686,7 +688,7 @@ Frame & Key Studio is best positioned as a working browser-based editing foundat
 5. إضافة جدول دعم للمتصفحات والميزات: التفريغ، الترجمة، OPFS، File System Access، WebCodecs.
 6. إضافة فحص يمنع تشغيل build تسليمي إذا كانت متغيرات أو مفاتيح حساسة متتبعة.
 7. إضافة `pnpm test:all` أو أمر موحد يشغّل check/test/build ويطبع ملخصاً واضحاً.
-8. توحيد التقارير القديمة التي تذكر 29 أو 30 أو 32 اختباراً مع النتيجة الحالية 90 اختباراً.
+8. إبقاء نتائج `main` (90 اختباراً) ونتيجة فرع Brand Kit (92 اختباراً) موسومة بوضوح حسب revision، وعدم دمجها في رقم واحد.
 9. إضافة اختبارات للحدود التي يطلبها المشتري غالباً: امتدادات ملفات غير مدعومة، ملف بلا صوت، ملف كبير، تعذر تحميل النموذج، إلغاء التصدير، وفشل File System Access.
 10. تحسين code splitting بحيث لا يُحمّل Studio وWorkers وWASM قبل دخول المستخدم إلى الاستوديو.
 11. إضافة رسائل UI أوضح لمرحلة “preparing/initializing” قبل ظهور تقدم التصدير.
@@ -737,7 +739,7 @@ The repository also contains an Express/tRPC application shell and a public inqu
 
 The code and current tests cover local video metadata inspection; audio extraction, downmixing, resampling, cancellation, and bounded analysis windows; browser-side Whisper transcription in a Web Worker; transcript-based clip and hook suggestions; manual clip boundaries; caption editing; SRT/VTT import/export; caption styles; title/logo/brand controls; local English-to-French/Spanish/German translation; portrait 9:16 framing; full-video/studio-background mode; optional face-assisted framing with manual fallback; browser-side export; sequential multi-clip rendering; ZIP creation for small batches; and IndexedDB/optional OPFS project persistence.
 
-The current repository checks are green: `pnpm check`, `pnpm test -- --run` (90 tests in 13 files), and `pnpm build` pass in the reviewed environment. See `docs/test-results-2026-11-03.md` for the exact run and scope.
+The historical `main` repository checks are green: `pnpm check`, `pnpm test -- --run` (90 tests in 13 files), and `pnpm build`. The current acquisition branch has a separate 92-test result in 14 files because of the added Brand Kit test. See `docs/test-results-2026-11-03.md` for the `main` scope and `docs/FINAL_ACCEPTANCE_REPORT.md` for the branch-scoped acceptance record.
 
 ## Partial capabilities and known limits
 
@@ -783,7 +785,7 @@ pnpm build
 git diff --check
 ```
 
-The current canonical automated result is 13 passing test files and 90 passing tests. These are unit/regression and server-route tests, not a substitute for browser media acceptance. Use `docs/manual-acceptance-checklist.md` for the buyer procedure. Historical browser/media reports remain in `docs/` with their original dates.
+The historical `main` result is 13 passing test files and 90 passing tests. The current acquisition branch has a separate 14-file, 92-test result because of the added Brand Kit test. These are unit/regression and server-route tests, not a substitute for browser media acceptance. Use `docs/manual-acceptance-checklist.md` for the buyer procedure. Historical browser/media reports remain in `docs/` with their original dates.
 
 ## External services and privacy boundary
 
@@ -976,7 +978,7 @@ The buyer may later choose to add cloud synchronization, a hosted media queue, m
 ---
 
 
-# 4. نتائج الاختبارات الحالية — 2026-11-03
+# 4. نتائج الاختبارات المرجعية لفرع `main` — 2026-11-03
 
 > **مصدر هذا القسم:** `/home/ubuntu/review-frame-key-studio/docs/test-results-2026-11-03.md`  
 > **الوصف:** نتائج تم تشغيلها فعلياً على النسخة الحالية.
@@ -1019,7 +1021,7 @@ This is a pattern-based review, not a guarantee against every possible secret fo
 
 ## Historical results
 
-Older reports in `docs/` contain valid historical acceptance records with earlier test counts such as 32. Those counts describe the repository state and scope at their original dates; they are not replaced or retroactively rewritten. The current canonical automated result for this checkout is 90 passing tests in 13 files.
+Older reports in `docs/` contain valid historical acceptance records with earlier test counts such as 32. Those counts describe the repository state and scope at their original dates; they are not replaced or retroactively rewritten. That `main` record is 90 passing tests in 13 files. The current acquisition branch was rerun separately at 92 passing tests in 14 files after the Brand Kit test was added.
 
 Historical browser/media reports are also not equivalent to a fresh test on every buyer browser/device. Use `docs/manual-acceptance-checklist.md` for a repeatable acceptance run.
 

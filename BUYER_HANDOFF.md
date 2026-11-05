@@ -2,6 +2,8 @@
 
 This document describes how to inspect, run, validate, and transfer the repository without assuming access to the seller's platform accounts.
 
+**Current acquisition branch:** `feat/brand-kit-templates-qa` with application baseline `b9068e9` before the documentation commit. The historical `main` verification record at `efb00be` reports 13 test files and 90 tests; this branch adds the Brand Kit test file and was separately rerun at 14 test files and 92 tests. These counts describe different revisions and must not be conflated. The repository contains no documented paying users or revenue and no production SaaS deployment.
+
 ## 1. Product boundary
 
 The Core Studio is the browser-local media editor under `client/src/features/studio/` and `client/src/pages/Studio.tsx`. It reads a local video, optionally transcribes or translates it in browser workers, creates editable clip/caption data, reframes it, and exports locally.
@@ -22,10 +24,11 @@ The Studio intentionally does not upload video/audio bytes, frames, transcripts,
 | `client/src/features/studio/export/` | Mediabunny conversion, file saving, ZIP/download helpers |
 | `client/src/features/studio/storage/` | IndexedDB and optional OPFS project/source persistence |
 | `client/src/features/studio/components/` | Preview, captions, branding, and Studio UI components |
+| `client/src/features/studio/brand/` | Brand Kit storage/types, 15 built-in templates, custom-template persistence, and related tests/styles |
 | `server/_core/` | Express startup, platform helpers, OAuth, config, storage, notifications, and inherited integrations |
 | `server/leads.ts` | Public inquiry validation, rate limiting, database save, and owner notification |
 | `drizzle/` | MySQL/Drizzle schema and checked-in migrations |
-| `docs/` | Historical validation reports and the buyer acceptance checklist |
+| `docs/` | Current buyer report, acceptance evidence, historical validation reports, and the buyer acceptance checklist |
 | `THIRD_PARTY_NOTICES.md` | Main third-party library/model attribution and license notes |
 | `package.json` | Scripts, runtime dependencies, and package metadata |
 | `Dockerfile` | Production build/container instructions for the application shell |
@@ -99,6 +102,7 @@ The following are local in the Core Studio:
 - Whisper transcription after model download.
 - Transcript-based clip suggestions.
 - Caption editing and SRT/VTT parsing/export.
+- Brand Kit application, JSON import/export, and built-in/custom video templates.
 - OPUS-MT translation after model download.
 - Face-assisted framing.
 - Canvas overlays and browser media conversion.
@@ -115,11 +119,13 @@ Use `docs/manual-acceptance-checklist.md`. The short form is:
 5. Review the transcript and suggested clips.
 6. Edit one clip boundary and one caption cue.
 7. Try Fill portrait and Full video/studio background.
-8. Optionally translate an English caption set to one supported language.
-9. Export a short 720p clip first.
-10. Inspect the file in a media player or with `ffprobe`.
-11. Test one cancellation/error path.
-12. Repeat at 1080p or with a larger file only on a device with sufficient memory.
+8. Apply a built-in template and a saved Brand Kit; verify that the preview changes.
+9. Optionally export/import a Brand Kit JSON file and reuse a custom template.
+10. Optionally translate an English caption set to one supported language.
+11. Export a short 720p clip first.
+12. Inspect the file in a media player or with `ffprobe`.
+13. Test one cancellation/error path.
+14. Repeat at 1080p or with a larger file only on a device with sufficient memory.
 
 The acceptance checklist distinguishes automated tests from browser/manual results. Do not mark a browser or device as supported unless it has actually been tested.
 
@@ -137,7 +143,7 @@ Models are not committed to Git and are downloaded on demand. Offline first use 
 - Face tracking is optional and can fail for small, compressed, dark, occluded, synthetic, or unusual faces. Manual framing is the safe fallback.
 - Whisper output requires human review.
 - Translation is currently English-source only for French, Spanish, and German, with phrase-level timing.
-- Browser codec, WebCodecs, File System Access, OPFS, WebGL, WASM speed, and memory vary.
+- Browser codec, WebCodecs, File System Access, OPFS, WebGL, WASM speed, and memory vary. MP4 export is conditional on H.264/AAC support; the current acceptance evidence proves WebM/VP9 + Opus, not MP4.
 - Long exports without direct-to-file saving may be memory constrained.
 - ZIP batches are bounded by a 64 MiB in-browser safety limit.
 - Project/source persistence is local to the browser and does not synchronize between devices.
@@ -146,7 +152,11 @@ Models are not committed to Git and are downloaded on demand. Offline first use 
 - There is no production deployment or payment/subscription system in this repository.
 - The package declares MIT, but a standalone `LICENSE` file is not currently included. Do not change that status without reviewing ownership and third-party terms.
 
-## 9. Transfer preparation
+## 9. Current checked-in acceptance evidence
+
+The repository includes `docs/FINAL_ACCEPTANCE_REPORT.md` and `docs/qa-evidence/`. The 2026-11-03 browser acceptance record documents a real MP4 source of about 37 MB and 8 minutes, local Whisper analysis, 225 timed words, three suggested clips, application of `Property Showcase` and a Brand Kit, and a saved WebM export with video, audio, captions, and successful `ffmpeg` decoding. The source was 320×240, so this is workflow evidence rather than a high-resolution production-quality claim. The record does not claim MP4 export success or broad browser support.
+
+## 10. Transfer preparation
 
 Before delivery, the buyer and seller should agree in writing on:
 
@@ -160,6 +170,6 @@ A clean delivery should include source, lockfile, tests, Dockerfile, migrations,
 
 Before transfer, run a full-history secret scan, rotate any external credentials, create buyer-owned service credentials, and verify that no buyer handoff document contains secret values.
 
-## 10. Recommended buyer follow-up work
+## 11. Recommended buyer follow-up work
 
 The buyer may later choose to add cloud synchronization, a hosted media queue, more languages, broader browser/device acceptance, code splitting, or a separate deployment adapter. None of those are required to run the local Studio demo, and none is represented as complete in this handoff.
