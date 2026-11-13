@@ -56,6 +56,8 @@ interface SavePickerWindow extends Window {
   }) => Promise<OutputFileHandle>;
 }
 export type OutputFormat = "mp4" | "webm-vp9" | "webm-vp8";
+/** Captions are intentionally text-only; contrast belongs to the glyph edge, not a panel. */
+export const CAPTION_BACKGROUND = "transparent" as const;
 export interface ExportProgress {
   progress: number;
   phase: string;
@@ -212,9 +214,6 @@ function drawCaption(
   if (!cue) return;
   const style = settings.captionStyle;
   const fontFamily = settings.fontFamily;
-  const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor)
-    ? settings.primaryColor
-    : "#203A31";
   const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor)
     ? settings.accentColor
     : "#C9794B";
@@ -240,12 +239,7 @@ function drawCaption(
   if (line) lines.push(line);
   const visibleLines = lines.slice(0, 3);
   const lineHeight = fontSize * 1.22;
-  const blockHeight = visibleLines.length * lineHeight + fontSize * 0.72;
-  const blockWidth = Math.min(
-    maxWidth + 48,
-    Math.max(...visibleLines.map(value => ctx.measureText(value).width), 0) + 48
-  );
-  const x = (ctx.canvas.width - blockWidth) / 2;
+  const blockHeight = visibleLines.length * lineHeight;
   // Title cards occupy the upper third during their opening window. If a user
   // selects a top caption, move it to a lower safe zone instead of allowing
   // the two editable elements to collide.
@@ -260,24 +254,29 @@ function drawCaption(
             ? 0.5
             : 0.72;
   const y = ctx.canvas.height * positionY - blockHeight / 2;
-  if (style !== "editorial") {
-    ctx.globalAlpha = style === "bold" ? 0.94 : 0.84;
-    ctx.fillStyle = primaryColor;
-    roundRect(ctx, x, y, blockWidth, blockHeight, style === "bold" ? 20 : 12);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+  // Never paint a caption panel. A restrained glyph outline and shadow preserve
+  // readability on both bright and dark footage without obscuring the image.
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1.5, fontSize * 0.055);
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.82)";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = Math.max(2, fontSize * 0.12);
+  ctx.shadowOffsetY = Math.max(1, fontSize * 0.035);
   const arabic = ARABIC_TEXT.test(cue.text);
   ctx.direction = arabic ? "rtl" : "ltr";
   if (arabic) {
     visibleLines.forEach((lineText, lineIndex) => {
       ctx.fillStyle = "#FFFFFF";
-      ctx.shadowColor = primaryColor;
-      ctx.shadowBlur = style === "editorial" ? 5 : 0;
       ctx.fillText(
         lineText,
         ctx.canvas.width / 2,
-        y + fontSize * 0.38 + lineIndex * lineHeight,
+        y + fontSize * 0.5 + lineIndex * lineHeight,
+        maxWidth
+      );
+      ctx.strokeText(
+        lineText,
+        ctx.canvas.width / 2,
+        y + fontSize * 0.5 + lineIndex * lineHeight,
         maxWidth
       );
     });
@@ -287,7 +286,7 @@ function drawCaption(
       const widths = lineWords.map(word => ctx.measureText(`${word} `).width);
       const totalWidth = widths.reduce((a, b) => a + b, 0);
       let cursor = (ctx.canvas.width - totalWidth) / 2;
-      const baseline = y + fontSize * 0.38 + lineIndex * lineHeight;
+      const baseline = y + fontSize * 0.5 + lineIndex * lineHeight;
       lineWords.forEach((word, wordIndex) => {
         const matched = cue.words.find(
           item =>
@@ -297,9 +296,8 @@ function drawCaption(
             absoluteTime <= item.end
         );
         ctx.fillStyle = matched ? accentColor : "#FFFFFF";
-        ctx.shadowColor = primaryColor;
-        ctx.shadowBlur = style === "editorial" ? 5 : 0;
         ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
+        ctx.strokeText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
         cursor += widths[wordIndex];
       });
     });

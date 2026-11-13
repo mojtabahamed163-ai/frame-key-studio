@@ -147,9 +147,9 @@
 .studio-preview-frame video { width: 100%; height: 100%; display: block; object-fit: cover; background: #151915; }
 .studio-preview-frame .studio-preview-background { position: absolute; inset: -5%; z-index: 0; width: 110%; height: 110%; object-fit: cover; filter: blur(18px) brightness(.62); transform: scale(1.06); }
 .studio-preview-frame .studio-preview-background + video { position: relative; z-index: 1; object-fit: contain; background: transparent; }
-.studio-preview-caption { position: absolute; z-index: 2; left: 7%; right: 7%; bottom: 19%; color: #fff; font: 800 clamp(15px,2vw,27px)/1.15 var(--sans); text-align: center; text-wrap: balance; text-shadow: 0 2px 9px rgba(0,0,0,.9); pointer-events: none; }
-.studio-preview-caption.caption-clean { padding: 7px 11px; border-radius: 4px; background: rgba(22,34,29,.76); }
-.studio-preview-caption.caption-bold { padding: 7px 11px; border-radius: 6px; font-weight: 800; letter-spacing: -.02em; -webkit-text-stroke: .25px rgba(0,0,0,.3); }
+.studio-preview-caption { position: absolute; z-index: 2; left: 7%; right: 7%; bottom: 19%; color: #fff; font: 800 clamp(15px,2vw,27px)/1.15 var(--sans); text-align: center; text-wrap: balance; text-shadow: 0 2px 7px rgba(0,0,0,.72); -webkit-text-stroke: .35px rgba(0,0,0,.78); pointer-events: none; }
+.studio-preview-caption.caption-clean, .studio-preview-caption.caption-bold, .studio-preview-caption.caption-editorial { padding: 0; border-radius: 0; background: transparent; }
+.studio-preview-caption.caption-bold { font-weight: 800; letter-spacing: -.02em; }
 .studio-preview-caption.caption-editorial { color: #fff5e5; font-family: var(--serif); font-weight: 600; }
 .studio-preview-caption.caption-arabic { direction: rtl; text-align: center; font-family: "Noto Naskh Arabic", "Tahoma", "Arial", sans-serif; line-height: 1.45; }
 .studio-preview-caption.caption-position-top { top: 18%; bottom: auto; }

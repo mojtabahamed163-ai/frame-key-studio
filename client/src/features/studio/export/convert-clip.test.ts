@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  CAPTION_BACKGROUND,
   cropForPortrait,
   effectivePortraitHeight,
   portraitCropQuality,
   videoBitrateForHeight,
 } from "./convert-clip";
+
+describe("caption appearance", () => {
+  it("keeps the caption background transparent for every editable style", () => {
+    expect(CAPTION_BACKGROUND).toBe("transparent");
+  });
+});
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {

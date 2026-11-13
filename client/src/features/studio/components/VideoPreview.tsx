@@ -10,6 +10,7 @@ import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { objectPositionForPortraitCrop } from "../media/framing";
 import { resolveCaptionPosition } from "../media/caption-placement";
+import { CAPTION_BACKGROUND } from "../export/convert-clip";
 import type { CaptionCue, ClipSuggestion, StudioSettings } from "../types";
 
 export function VideoPreview({
@@ -196,10 +197,7 @@ export function VideoPreview({
             dir={isArabic ? "rtl" : "ltr"}
             className={`studio-preview-caption caption-${settings.captionStyle} caption-position-${captionPosition}${isArabic ? " caption-arabic" : ""}`}
             style={{
-              backgroundColor:
-                settings.captionStyle === "editorial"
-                  ? "transparent"
-                  : settings.primaryColor,
+              backgroundColor: CAPTION_BACKGROUND,
               fontFamily: settings.fontFamily,
             }}
             aria-live="off"
