@@ -10,7 +10,7 @@ The repository also contains an Express/tRPC application shell and a public inqu
 
 The code and current tests cover local video metadata inspection; audio extraction, downmixing, resampling, cancellation, and bounded analysis windows; browser-side Whisper transcription in a Web Worker; transcript-based clip and hook suggestions; manual clip boundaries; caption editing; SRT/VTT import/export; caption styles; title/logo/brand controls; local English-to-Arabic/French/Spanish/German OPUS-MT translation; unchanged English caption pass-through; portrait 9:16 framing; full-video/studio-background mode; optional face-assisted framing with stable caption placement; browser-side export; sequential multi-clip rendering; ZIP creation for small batches; and IndexedDB/optional OPFS project persistence.
 
-The current repository checks are green: `pnpm check`, `pnpm test -- --run` (112 tests in 16 files), `pnpm build`, and `pnpm audit --prod` pass in the reviewed environment. See the mission acceptance report for the manual browser media evidence and the exact scope of those checks.
+The current repository checks are green: `pnpm check`, `pnpm test -- --run` (114 tests in 16 files), `pnpm build`, and `pnpm audit --prod` pass in the reviewed environment. See the consolidated mission handoff and acceptance report for the manual browser media evidence and the exact scope of those checks.
 
 ## Partial capabilities and known limits
 
@@ -56,7 +56,7 @@ pnpm build
 git diff --check
 ```
 
-The current canonical automated result is 13 passing test files and 90 passing tests. These are unit/regression and server-route tests, not a substitute for browser media acceptance. Use `docs/manual-acceptance-checklist.md` for the buyer procedure. Historical browser/media reports remain in `docs/` with their original dates.
+The current canonical automated result is 16 passing test files and 114 passing tests (verified 2026-11-14). These are unit/regression and server-route tests, not a substitute for browser media acceptance. Use `docs/manual-acceptance-checklist.md` for the buyer procedure. Historical browser/media reports remain in `docs/` with their original dates.
 
 ## External services and privacy boundary
 

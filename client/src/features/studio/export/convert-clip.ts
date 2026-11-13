@@ -265,15 +265,16 @@ function drawCaption(
   const arabic = ARABIC_TEXT.test(cue.text);
   ctx.direction = arabic ? "rtl" : "ltr";
   if (arabic) {
+    ctx.lineWidth = Math.max(0.8, fontSize * 0.03);
     visibleLines.forEach((lineText, lineIndex) => {
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillText(
+      ctx.strokeText(
         lineText,
         ctx.canvas.width / 2,
         y + fontSize * 0.5 + lineIndex * lineHeight,
         maxWidth
       );
-      ctx.strokeText(
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(
         lineText,
         ctx.canvas.width / 2,
         y + fontSize * 0.5 + lineIndex * lineHeight,

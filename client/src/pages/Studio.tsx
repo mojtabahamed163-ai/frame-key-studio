@@ -30,6 +30,7 @@ import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
 import {
   buildCaptionCues,
+  ensureMinimumCueDisplayDuration,
   joinTranscriptWords,
   normalizeClipBounds,
   remapCueToOutput,
@@ -325,7 +326,12 @@ export default function Studio() {
       translatedForClip
         ? translatedForLanguage
         : sourceCues(project);
-    return settings.captionMode === "word" ? toWordCues(cues) : cues;
+    const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
+    return ensureMinimumCueDisplayDuration(
+      displayedCues,
+      activeClip?.start ?? 0,
+      activeClip?.end ?? project.duration
+    );
   }, [project, settings.targetLanguage, settings.captionMode, activeClip]);
   const currentClipCues = useMemo(
     () =>
@@ -1207,7 +1213,8 @@ export default function Studio() {
       translatedForClip
         ? translatedForLanguage
         : sourceCues(project);
-    return settings.captionMode === "word" ? toWordCues(cues) : cues;
+    const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
+    return ensureMinimumCueDisplayDuration(displayedCues, clip.start, clip.end);
   }
 
   function exportCaptionFile(kind: "srt" | "vtt") {

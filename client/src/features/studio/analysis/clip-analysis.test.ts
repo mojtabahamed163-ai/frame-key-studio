@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, mapSourceTimeToOutput, normalizeClipBounds, remapCueToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import { buildCaptionCues, ensureMinimumCueDisplayDuration, mapSourceTimeToOutput, normalizeClipBounds, remapCueToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
 import type { TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
@@ -233,6 +233,32 @@ describe("local transcript analysis", () => {
     expect(cues.length).toBeGreaterThan(1);
     expect(toSrt(cues)).toContain("00:00:00,000 -->");
     expect(toVtt(cues)).toContain("WEBVTT\n\n");
+  });
+
+  it("extends short caption display time only into the available gap", () => {
+    const cues = [
+      { id: "short", start: 1, end: 1.25, text: "Yeah.", words: [] },
+      { id: "next", start: 2.1, end: 3, text: "Next line.", words: [] },
+      { id: "tail", start: 3.5, end: 3.7, text: "Done.", words: [] },
+    ];
+    const result = ensureMinimumCueDisplayDuration(cues, 1, 4, 0.8, 0.02);
+
+    expect(result.map(({ start, end }) => [start, end])).toEqual([
+      [1, 1.8],
+      [2.1, 3],
+      [3.5, 4],
+    ]);
+    expect(result[0].end).toBeLessThan(result[1].start);
+    expect(result[2].end).toBeLessThanOrEqual(4);
+    expect(cues[0].end).toBe(1.25);
+  });
+
+  it("does not extend a short caption through an existing overlap", () => {
+    const cues = [
+      { id: "short", start: 1, end: 1.2, text: "Yes.", words: [] },
+      { id: "overlap", start: 1.1, end: 2, text: "Next.", words: [] },
+    ];
+    expect(ensureMinimumCueDisplayDuration(cues, 0, 3)[0].end).toBe(1.2);
   });
 
   it("maps speech ranges to a compressed output timeline and leaves gaps unmapped", () => {

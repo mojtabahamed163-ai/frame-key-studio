@@ -394,6 +394,48 @@ export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): numb
   return null;
 }
 
+/** Extend very short captions into an available gap so viewers have time to read them. */
+export function ensureMinimumCueDisplayDuration(
+  cues: CaptionCue[],
+  clipStart: number,
+  clipEnd: number,
+  minimumSeconds = 0.8,
+  gapSeconds = 0.02
+): CaptionCue[] {
+  if (
+    !Number.isFinite(clipStart) ||
+    !Number.isFinite(clipEnd) ||
+    clipEnd <= clipStart ||
+    !Number.isFinite(minimumSeconds) ||
+    minimumSeconds <= 0
+  ) return cues;
+
+  const ordered = cues
+    .map((cue, index) => ({ cue, index }))
+    .sort((a, b) => a.cue.start - b.cue.start || a.cue.end - b.cue.end);
+  const adjusted = new Map<number, CaptionCue>();
+  ordered.forEach(({ cue, index }, orderIndex) => {
+    if (
+      !Number.isFinite(cue.start) ||
+      !Number.isFinite(cue.end) ||
+      cue.end <= cue.start ||
+      cue.start >= clipEnd
+    ) return;
+    const visibleStart = Math.max(cue.start, clipStart);
+    if (cue.end - visibleStart >= minimumSeconds) return;
+
+    const nextStart = ordered[orderIndex + 1]?.cue.start;
+    if (nextStart !== undefined && nextStart <= cue.end) return;
+    const latestEnd = Math.min(
+      clipEnd,
+      nextStart === undefined ? clipEnd : nextStart - Math.max(0, gapSeconds)
+    );
+    const extendedEnd = Math.min(visibleStart + minimumSeconds, latestEnd);
+    if (extendedEnd > cue.end) adjusted.set(index, { ...cue, end: extendedEnd });
+  });
+  return cues.map((cue, index) => adjusted.get(index) ?? cue);
+}
+
 export function remapCueToOutput(
   cue: CaptionCue,
   sourceOffset: number,
