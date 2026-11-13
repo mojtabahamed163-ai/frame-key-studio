@@ -169,7 +169,7 @@ export function sentenceGroups(words: TranscriptWord[], sourceDuration = Number.
   return sentences;
 }
 
-function scoreWindow(sentences: Sentence[], start: number, end: number, text: string, sourceWords: TranscriptWord[]): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string } {
+function scoreWindow(sentences: Sentence[], start: number, end: number, text: string, sourceWords: TranscriptWord[]): { score: number; reasons: string[]; quality: "reliable" | "review"; qualityWarning?: string; hasStructuralWarning: boolean } {
   const duration = end - start;
   const clipWords = sentences.flatMap((sentence) => sentence.words);
   const words = text.split(/\s+/).filter(Boolean);
@@ -246,8 +246,10 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     score -= 1.5;
     warningParts.push("the transcript contains many filler words");
   }
-  const qualityWarning = warningParts.length ? `Review required: ${warningParts.join(" and ")}.` : undefined;
-  return { score, reasons, quality: qualityWarning ? "review" : "reliable", qualityWarning };
+  const hasStructuralWarning = warningParts.length > 0;
+  const recognitionWarning = "machine-generated transcript wording needs a listen-through; cut scores do not verify recognition accuracy";
+  const qualityWarning = `Review required: ${[recognitionWarning, ...warningParts].join(" and ")}.`;
+  return { score, reasons, quality: "review", qualityWarning, hasStructuralWarning };
 }
 
 function makePostCopy(text: string, start: number): Pick<ClipSuggestion, "titleOptions" | "description" | "hashtags" | "callsToAction"> {
@@ -297,8 +299,8 @@ export function suggestClips(words: TranscriptWord[], maxClips = 3, sourceDurati
       const duration = next.end - group[0].start;
       if (duration < MIN_CLIP_DURATION_SECONDS || duration > MAX_CLIP_DURATION_SECONDS) continue;
       const text = group.map((sentence) => sentence.text).join(" ");
-      const { score, reasons, quality, qualityWarning } = scoreWindow(group, group[0].start, next.end, text, words);
-      if (qualityWarning && score < 3.5) continue;
+      const { score, reasons, quality, qualityWarning, hasStructuralWarning } = scoreWindow(group, group[0].start, next.end, text, words);
+      if (hasStructuralWarning && score < 3.5) continue;
       const wordsInClip = group.flatMap((sentence) => sentence.words);
       const copy = makePostCopy(text, group[0].start);
       const hookCandidates = group.slice(0, 3).filter((sentence) => next.end - sentence.start >= 8);

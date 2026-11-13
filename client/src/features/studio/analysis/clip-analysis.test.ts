@@ -66,6 +66,15 @@ describe("local transcript analysis", () => {
     expect(candidate?.qualityWarning).toContain("unreliable word timings");
   });
 
+  it("requires a listen-through for machine-generated wording even when timing looks clean", () => {
+    const source = wordsFrom("In today's conversation we are sharing a specific family memory about dancing at home and school and how this experience helped shape the stories that make everyone smile when relatives gather together.".split(" "));
+    source[source.length - 1].text = "together.";
+    const candidate = suggestClips(source, 10, 30)[0];
+    expect(candidate).toBeDefined();
+    expect(candidate?.quality).toBe("review");
+    expect(candidate?.qualityWarning).toContain("recognition accuracy");
+  });
+
   it("marks adjacent duplicate transcript words for review instead of calling the clip reliable", () => {
     const source = wordsFrom("Why buyers should compare monthly payments before they choose homes because taxes insurance utilities maintenance and closing fees can change the actual budget for families during unexpected rate shifts across the local property market every year and written offers should show each fixed cost before signing any purchase agreement today.".split(" "));
     source[source.length - 1].text = "today.";

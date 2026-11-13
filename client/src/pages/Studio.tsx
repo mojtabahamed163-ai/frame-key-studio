@@ -1841,8 +1841,8 @@ export default function Studio() {
                 {project.clips.some(clip => clip.qualityWarning) && (
                   <p className="studio-inline-warning">
                     <AlertTriangle size={15} />
-                    Some suggestions have unreliable or repetitive transcript
-                    text. Review the transcript and preview before publishing.
+                    Machine-generated transcript text is a draft; listen to the
+                    source and verify wording and cut boundaries before publishing.
                   </p>
                 )}
                 <div className="clip-suggestion-list">
