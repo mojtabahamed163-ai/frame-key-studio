@@ -99,8 +99,8 @@ export function VideoPreview({
           style={settings.framingMode === "full" ? undefined : { objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%` }}
         />
         {logoUrl && <img className={`studio-preview-logo studio-preview-logo--${settings.logoPosition}`} src={logoUrl} alt="" aria-hidden="true" />}
-        {settings.showTitleCard && clip && titleText && currentTime >= clip.start && currentTime < clip.start + 2.8 && <div className="studio-preview-title" style={{ backgroundColor: settings.primaryColor, fontFamily: settings.fontFamily }}><span style={{ backgroundColor: settings.accentColor }} /><strong>{titleText}</strong></div>}
-        {settings.showCaptions && activeCue && <div className={`studio-preview-caption caption-${settings.captionStyle}`} style={{ backgroundColor: settings.captionStyle === "editorial" ? "transparent" : settings.primaryColor, fontFamily: settings.fontFamily }} aria-live="off">
+        {settings.showTitleCard && clip && titleText && currentTime >= clip.start && currentTime < clip.start + 2.8 && <div className={`studio-preview-title title-${settings.titleStyle}`} style={{ backgroundColor: settings.primaryColor, fontFamily: settings.fontFamily }}><span style={{ backgroundColor: settings.accentColor }} /><strong>{titleText}</strong></div>}
+        {settings.showCaptions && activeCue && <div className={`studio-preview-caption caption-${settings.captionStyle} caption-position-${settings.captionPosition}`} style={{ backgroundColor: settings.captionStyle === "editorial" ? "transparent" : settings.primaryColor, fontFamily: settings.fontFamily }} aria-live="off">
           {activeCue.words.length ? activeCue.words.map((word) => <span key={word.id} className={word.id === activeWordId ? "is-speaking" : ""} style={word.id === activeWordId ? { color: settings.accentColor } : undefined}>{word.text} </span>) : <span>{activeCue.text}</span>}
         </div>}
         {!clip && <div className="studio-preview-empty"><span><Play size={20} fill="currentColor" /></span><p>Choose a suggested moment<br />to preview your cut.</p></div>}

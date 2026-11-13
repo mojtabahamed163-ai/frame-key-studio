@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { BrandControls } from "@/features/studio/components/BrandControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
+import { TemplateControls } from "@/features/studio/components/TemplateControls";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
 import { VideoPreview } from "@/features/studio/components/VideoPreview";
 import { buildCaptionCues, joinTranscriptWords, normalizeClipBounds, suggestClips, toWordCues, WORD_CUE_PREFIX } from "@/features/studio/analysis/clip-analysis";
@@ -909,6 +910,7 @@ export default function Studio() {
                 {portraitQuality?.isUpscaled && <p className="studio-inline-warning"><AlertTriangle size={14} />This portrait crop uses about {portraitQuality.cropWidth}×{portraitQuality.cropHeight} source pixels and will be enlarged to {portraitQuality.outputWidth}×{portraitQuality.outputHeight}. Higher output dimensions cannot restore detail missing from the original crop.</p>}
                 <div className="studio-codec-note"><span className={outputFormat ? "codec-ready" : "codec-warn"} />{outputFormat ? `${outputFormat === "mp4" ? "MP4 / H.264 + AAC" : outputFormat === "webm-vp8" ? "WebM / VP8 + Opus" : "WebM / VP9 + Opus"} detected on this device` : "This browser does not report a compatible local video and audio encoder."}</div>
               </section>
+              <TemplateControls settings={settings} onChange={changeSettings} />
               <BrandControls settings={settings} onChange={changeSettings} />
               {activeClip && <div className="studio-step-actions studio-step-actions--sidebar"><button type="button" className="studio-button studio-button--secondary" onClick={() => goToStep("select")}><ArrowLeft size={15} />Moments</button><button type="button" className="studio-button studio-button--dark" onClick={() => goToStep("export")}>Export <ArrowRight size={15} /></button></div>}
             </aside>

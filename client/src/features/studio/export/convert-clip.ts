@@ -113,7 +113,8 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   const blockHeight = visibleLines.length * lineHeight + fontSize * 0.72;
   const blockWidth = Math.min(maxWidth + 48, Math.max(...visibleLines.map((value) => ctx.measureText(value).width), 0) + 48);
   const x = (ctx.canvas.width - blockWidth) / 2;
-  const y = ctx.canvas.height * 0.72 - blockHeight / 2;
+  const positionY = settings.captionPosition === "top" ? 0.2 : settings.captionPosition === "middle" ? 0.5 : 0.72;
+  const y = ctx.canvas.height * positionY - blockHeight / 2;
   if (style !== "editorial") {
     ctx.globalAlpha = style === "bold" ? 0.94 : 0.84;
     ctx.fillStyle = primaryColor;
@@ -165,17 +166,24 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   const lineHeight = fontSize * 1.25;
   const cardHeight = visible.length * lineHeight + padding;
   const x = padding;
-  const y = height * 0.13;
+  const y = settings.titleStyle === "corner" ? height * 0.08 : settings.titleStyle === "minimal" ? height * 0.18 : height * 0.13;
   ctx.globalAlpha = 0.94;
-  ctx.fillStyle = primaryColor;
-  roundRect(ctx, x, y, width - padding * 2, cardHeight, Math.round(fontSize * 0.32));
-  ctx.fill();
+  const cardX = settings.titleStyle === "corner" ? width * 0.42 : x;
+  const cardWidth = settings.titleStyle === "corner" ? width * 0.53 : width - padding * 2;
+  if (settings.titleStyle !== "minimal") {
+    ctx.fillStyle = primaryColor;
+    roundRect(ctx, cardX, y, cardWidth, cardHeight, Math.round(fontSize * 0.32));
+    ctx.fill();
+  }
   ctx.globalAlpha = 1;
   ctx.fillStyle = accentColor;
-  roundRect(ctx, x + 14, y + 14, 5, Math.max(12, cardHeight - 28), 3);
-  ctx.fill();
+  if (settings.titleStyle !== "minimal") {
+    roundRect(ctx, cardX + 14, y + 14, 5, Math.max(12, cardHeight - 28), 3);
+    ctx.fill();
+  }
   ctx.fillStyle = "#FFFFFF";
-  visible.forEach((text, index) => ctx.fillText(text, width / 2, y + padding / 2 + lineHeight * (index + 0.5), maxLineWidth));
+  const textX = settings.titleStyle === "corner" ? cardX + cardWidth / 2 : width / 2;
+  visible.forEach((text, index) => ctx.fillText(text, textX, y + padding / 2 + lineHeight * (index + 0.5), maxLineWidth));
   ctx.restore();
 }
 

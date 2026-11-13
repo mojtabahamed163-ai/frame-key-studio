@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { sourceMatchesProject } from "./project-store";
+import "fake-indexeddb/auto";
+import { beforeAll, describe, expect, it } from "vitest";
+import { defaultBrandSettings, deleteBrandKit, listBrandKits, saveBrandKit, sourceMatchesProject } from "./project-store";
+import { DEFAULT_SETTINGS } from "../types";
+
+beforeAll(() => {
+  (globalThis as typeof globalThis & { window: typeof globalThis }).window = globalThis;
+});
 
 describe("saved source identity", () => {
   const project = {
@@ -17,5 +23,20 @@ describe("saved source identity", () => {
   it("accepts an OPFS-restored file name while retaining the size check", () => {
     expect(sourceMatchesProject(new File(["data"], "project-id.source", { lastModified: 456 }), project, true)).toBe(true);
     expect(sourceMatchesProject(new File(["bad"], "project-id.source", { lastModified: 456 }), project, true)).toBe(false);
+  });
+});
+
+describe("Brand Kit IndexedDB persistence", () => {
+  it("creates, lists, updates, and deletes a Brand Kit", async () => {
+    const id = `test-kit-${Date.now()}`;
+    const kit = { id, name: "Test kit", createdAt: 1, updatedAt: 1, ...defaultBrandSettings(DEFAULT_SETTINGS) };
+    await saveBrandKit(kit);
+    expect((await listBrandKits()).find((item) => item.id === id)?.name).toBe("Test kit");
+
+    await saveBrandKit({ ...kit, name: "Updated kit" });
+    expect((await listBrandKits()).find((item) => item.id === id)?.name).toBe("Updated kit");
+
+    await deleteBrandKit(id);
+    expect((await listBrandKits()).some((item) => item.id === id)).toBe(false);
   });
 });

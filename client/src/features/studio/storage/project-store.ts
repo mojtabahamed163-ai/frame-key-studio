@@ -1,9 +1,10 @@
-import { DEFAULT_SETTINGS, type BrandSettings, type StudioProject, type StudioSettings } from "../types";
+import { DEFAULT_SETTINGS, type BrandKit, type BrandSettings, type StudioProject, type StudioSettings } from "../types";
 
 const DB_NAME = "framekey-studio-local";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PROJECTS = "projects";
 const PREFERENCES = "preferences";
+const BRAND_KITS = "brandKits";
 let writeQueue: Promise<void> = Promise.resolve();
 
 type BrowserStorageManager = StorageManager & {
@@ -36,6 +37,7 @@ function openDatabase(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PREFERENCES)) db.createObjectStore(PREFERENCES, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(BRAND_KITS)) db.createObjectStore(BRAND_KITS, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Could not open local project storage."));
@@ -85,6 +87,20 @@ export async function listProjects(): Promise<StudioProject[]> {
 
 export async function saveSettings(settings: StudioSettings): Promise<void> {
   await enqueueWrite(() => requestValue<IDBValidKey>(PREFERENCES, "readwrite", (store) => store.put({ key: "defaults", value: settings })));
+}
+
+export async function listBrandKits(): Promise<BrandKit[]> {
+  const kits = await requestValue<BrandKit[]>(BRAND_KITS, "readonly", (store) => store.getAll());
+  return kits.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function saveBrandKit(kit: BrandKit): Promise<void> {
+  const updated = { ...kit, updatedAt: Date.now() };
+  await enqueueWrite(() => requestValue<IDBValidKey>(BRAND_KITS, "readwrite", (store) => store.put(updated)));
+}
+
+export async function deleteBrandKit(id: string): Promise<void> {
+  await enqueueWrite(() => requestValue<undefined>(BRAND_KITS, "readwrite", (store) => store.delete(id)));
 }
 
 export async function loadSettings(): Promise<StudioSettings> {
@@ -167,6 +183,6 @@ export async function deleteProject(project: StudioProject): Promise<void> {
 }
 
 export function defaultBrandSettings(settings: StudioSettings): BrandSettings {
-  const { brandName, primaryColor, accentColor, captionStyle, fontFamily, logoPosition, logo } = settings;
-  return { brandName, primaryColor, accentColor, captionStyle, fontFamily, logoPosition, logo };
+  const { brandName, primaryColor, accentColor, captionStyle, captionPosition, fontFamily, logoPosition, logo } = settings;
+  return { brandName, primaryColor, accentColor, captionStyle, captionPosition, fontFamily, logoPosition, logo };
 }

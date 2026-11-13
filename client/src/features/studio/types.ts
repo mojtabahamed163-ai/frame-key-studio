@@ -53,6 +53,14 @@ export interface ClipSuggestion {
 
 export type CaptionStyle = "clean" | "bold" | "editorial";
 export type CaptionMode = "word" | "block";
+export type CaptionPosition = "top" | "middle" | "bottom";
+export type TitleStyle = "banner" | "minimal" | "split" | "corner";
+export type TemplateId =
+  | "estate-hero" | "estate-editorial" | "estate-split"
+  | "food-menu" | "food-street" | "food-editorial"
+  | "edu-notes" | "edu-highlight" | "edu-whiteboard"
+  | "podcast-lowerthird" | "podcast-wave" | "podcast-bold"
+  | "marketing-launch" | "marketing-social" | "marketing-report";
 export type LogoPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export type FramingMode = "fill" | "full";
 export type OutputPlatform = "generic" | "tiktok" | "instagram-reels" | "youtube-shorts";
@@ -63,12 +71,22 @@ export interface BrandSettings {
   primaryColor: string;
   accentColor: string;
   captionStyle: CaptionStyle;
+  captionPosition: CaptionPosition;
   fontFamily: string;
   logoPosition: LogoPosition;
   logo?: Blob;
 }
 
+export interface BrandKit extends BrandSettings {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface StudioSettings extends BrandSettings {
+  templateId: TemplateId;
+  titleStyle: TitleStyle;
   captionMode: CaptionMode;
   silenceRemoval: boolean;
   silenceThresholdSeconds: number;
@@ -119,10 +137,13 @@ export interface VideoMetadata {
 }
 
 export const DEFAULT_SETTINGS: StudioSettings = {
+  templateId: "estate-hero",
+  titleStyle: "banner",
   brandName: "Frame & Key",
   primaryColor: "#203A31",
   accentColor: "#C9794B",
   captionStyle: "clean",
+  captionPosition: "bottom",
   captionMode: "block",
   fontFamily: "DM Sans, Arial, sans-serif",
   logoPosition: "bottom-right",
