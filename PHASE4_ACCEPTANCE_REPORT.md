@@ -152,4 +152,4 @@ No production source change was required by the current browser tests.
 
 ## Git delivery
 
-Final commit SHA before push: `9018cd5d4e08a0c08217a39a5f9b6ac0e7c1598f`. The remote SHA and clean working-tree result are verified after push and recorded in the delivery response.
+Validated implementation commit SHA: `41596fec168b339683f3b0864327b1f34f377d36`. The final pushed HEAD SHA and clean working-tree result are verified after push and recorded in the delivery response.
