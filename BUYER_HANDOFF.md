@@ -100,7 +100,7 @@ The container runs `pnpm build` during image creation and starts `dist/index.js`
 - `pnpm db:push` — generates and applies Drizzle migrations; requires `DATABASE_URL` and must not be run against production without review and backups.
 - `pnpm db:migrate` — applies Drizzle migrations; requires `DATABASE_URL`.
 
-The current verified repository result is 15 test files and 98 passing tests, a passing TypeScript check, a passing production build, a clean `git diff --check`, and no known production vulnerabilities from `pnpm audit --prod`. Repeat these commands after transfer because browser/device acceptance is separate from Node tests.
+The current verified repository result is 16 test files and 114 passing tests, a passing TypeScript check, a passing production build, a clean `git diff --check`, and no known production vulnerabilities from `pnpm audit --prod`. Repeat these commands after transfer because browser/device acceptance is separate from Node tests.
 
 ## 5. Local video and audio pipeline
 
