@@ -8,13 +8,13 @@ The repository also contains an Express/tRPC application shell and a public inqu
 
 ## What is implemented
 
-The code and current tests cover local video metadata inspection; audio extraction, downmixing, resampling, cancellation, and bounded analysis windows; browser-side Whisper transcription in a Web Worker; transcript-based clip and hook suggestions; manual clip boundaries; caption editing; SRT/VTT import/export; caption styles; title/logo/brand controls; local English-to-French/Spanish/German translation; portrait 9:16 framing; full-video/studio-background mode; optional face-assisted framing with manual fallback; browser-side export; sequential multi-clip rendering; ZIP creation for small batches; and IndexedDB/optional OPFS project persistence.
+The code and current tests cover local video metadata inspection; audio extraction, downmixing, resampling, cancellation, and bounded analysis windows; browser-side Whisper transcription in a Web Worker; transcript-based clip and hook suggestions; manual clip boundaries; caption editing; SRT/VTT import/export; caption styles; title/logo/brand controls; local English-to-Arabic/French/Spanish/German OPUS-MT translation; unchanged English caption pass-through; portrait 9:16 framing; full-video/studio-background mode; optional face-assisted framing with stable caption placement; browser-side export; sequential multi-clip rendering; ZIP creation for small batches; and IndexedDB/optional OPFS project persistence.
 
-The current repository checks are green: `pnpm check`, `pnpm test -- --run` (90 tests in 13 files), and `pnpm build` pass in the reviewed environment. See `docs/test-results-2026-11-03.md` for the exact run and scope.
+The current repository checks are green: `pnpm check`, `pnpm test -- --run` (112 tests in 16 files), `pnpm build`, and `pnpm audit --prod` pass in the reviewed environment. See the mission acceptance report for the manual browser media evidence and the exact scope of those checks.
 
 ## Partial capabilities and known limits
 
-Whisper output requires human review. Clip suggestions are rule-based transcript analysis, not a guaranteed engagement prediction. Face-assisted framing tracks visible faces but does not identify the speaker; small, compressed, dark, occluded, synthetic, or unusual faces may fall back to manual framing. Translation currently supports English source text to French, Spanish, or German and uses approximate phrase-level timing. 1080x1920 is an output canvas and cannot restore detail lost by a 16:9-to-9:16 crop. Long exports are safest in browsers with direct-to-file saving; without it, memory-limited fallbacks and a 64 MiB ZIP safety budget apply. Projects are local to the browser and are not synchronized between devices. The repository has no production URL and intentionally contains no payment or subscription system; it is being prepared as a source-code/product asset transfer, not as a completed billing SaaS.
+Whisper output requires human review. Clip suggestions are rule-based transcript analysis, not a guaranteed engagement prediction. Face-assisted framing tracks visible faces but does not identify the speaker; small, compressed, dark, occluded, synthetic, or unusual faces may fall back to manual framing. Translation supports English source text to Arabic, French, Spanish, or German and uses approximate phrase-level timing; choosing English keeps the Whisper text unchanged. 1080x1920 is an output canvas and cannot restore detail lost to a 16:9-to-9:16 crop. Long exports are safest in browsers with direct-to-file saving; without it, memory-limited fallbacks and a 64 MiB ZIP safety budget apply. Projects are local to the browser and are not synchronized between devices. The repository has no production URL and intentionally contains no payment or subscription system; it is being prepared as a source-code/product asset transfer, not as a completed billing SaaS.
 
 ## Technology stack
 
@@ -28,7 +28,7 @@ Model weights are not committed to Git. They are fetched from public model repos
 |---|---|---|---|
 | English transcription | `Xenova/whisper-base.en` | English source speech | Not bundled; download varies by model files/runtime |
 | Other-language transcription | `Xenova/whisper-tiny` | Multilingual transcription | Repository notice estimates about 41 MB for selected q8 ONNX weights before auxiliary files |
-| Translation | `onnx-community/opus-mt-en-fr`, `en-es`, `en-de` | English to French/Spanish/German | About 214.5–234.8 MiB per selected language before auxiliary/runtime files |
+| Translation | `onnx-community/opus-mt-en-ar`, `en-fr`, `en-es`, `en-de` | English to Arabic/French/Spanish/German; English target is copied unchanged | Model weights are downloaded on first use and vary by model |
 | Face-assisted framing | MediaPipe through TensorFlow.js | Optional local visible-face tracking | Local inference with manual fallback |
 
 Translation uses CPU/WebAssembly and does not require WebGPU. First use may be slow and requires access to the public model host.

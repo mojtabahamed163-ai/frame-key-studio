@@ -32,6 +32,8 @@ import {
   buildCaptionCues,
   joinTranscriptWords,
   normalizeClipBounds,
+  remapCueToOutput,
+  speechKeepRanges,
   suggestClips,
   toWordCues,
   WORD_CUE_PREFIX,
@@ -60,6 +62,8 @@ import {
   type FaceTrackingProgress,
 } from "@/features/studio/media/face-tracking";
 import {
+  copyEnglishCues,
+  mergeTranslatedCues,
   translateCues,
   type TranslationProgress,
 } from "@/features/studio/models/translate-cues";
@@ -307,16 +311,19 @@ export default function Studio() {
   );
   const currentCues = useMemo(() => {
     if (!project) return [];
+    const translatedForLanguage = project.translatedCues.filter(cue =>
+      cue.id.startsWith(`translated-${settings.targetLanguage}-`)
+    );
     const translatedForClip = activeClip
-      ? project.translatedCues.some(
+      ? translatedForLanguage.some(
           cue => cue.end >= activeClip.start && cue.start <= activeClip.end
         )
-      : project.translatedCues.length > 0;
+      : translatedForLanguage.length > 0;
     const cues =
       settings.targetLanguage !== "none" &&
       project.translatedLanguage === settings.targetLanguage &&
       translatedForClip
-        ? project.translatedCues
+        ? translatedForLanguage
         : sourceCues(project);
     return settings.captionMode === "word" ? toWordCues(cues) : cues;
   }, [project, settings.targetLanguage, settings.captionMode, activeClip]);
@@ -682,6 +689,19 @@ export default function Studio() {
 
   async function runTranscription() {
     if (!sourceFile || !project) return;
+    const autoTranslate =
+      settings.captionProcessingMode === "transcribe-and-translate";
+    const targetLanguage = settings.targetLanguage;
+    if (autoTranslate && targetLanguage === "none") {
+      setError("Choose a target language before starting Transcribe + translate.");
+      return;
+    }
+    if (autoTranslate && project.sourceLanguage !== "en") {
+      setError(
+        "Local OPUS-MT translation requires English speech. Choose English as the speech language and run analysis again."
+      );
+      return;
+    }
     setError("");
     setNotice("");
     setIsAnalyzing(true);
@@ -710,11 +730,12 @@ export default function Studio() {
           "No timed speech words were returned. Import an SRT/VTT file or add clips manually."
         );
       const suggestions = suggestClips(words, 3, project.duration);
+      const captions = buildCaptionCues(words);
       const next: StudioProject = {
         ...project,
         words,
         transcriptionWarnings: transcription.warnings,
-        editedCues: buildCaptionCues(words),
+        editedCues: captions,
         translatedCues: [],
         translatedLanguage: "none",
         clips: suggestions,
@@ -737,6 +758,47 @@ export default function Studio() {
           : `The words were transcribed, but no short self-contained segments were found. The full timed transcript is ready for review; add a manual clip if you want to edit it.${warningNotice}`
       );
       setStep("select");
+      if (autoTranslate && targetLanguage !== "none") {
+        setIsTranslating(true);
+        setTranslationProgress({
+          stage: "model",
+          progress: 0,
+          detail:
+            targetLanguage === "en"
+              ? "Keeping the English Whisper transcript unchanged"
+              : "Preparing the local OPUS-MT translation model",
+        });
+        try {
+          const translated =
+            targetLanguage === "en"
+              ? copyEnglishCues(captions)
+              : await translateCues(
+                  captions,
+                  targetLanguage,
+                  setTranslationProgress,
+                  controller.signal
+                );
+          if (controller.signal.aborted) return;
+          commitProject({
+            ...next,
+            translatedCues: translated,
+            translatedLanguage: targetLanguage,
+          });
+          setNotice(
+            targetLanguage === "en"
+              ? `${suggestions.length} clip suggestion${suggestions.length === 1 ? " was" : "s were"} created. English captions were kept unchanged; no translation model was run.${warningNotice}`
+              : `Whisper analysis and local OPUS-MT translation to ${targetLanguage} are complete for ${translated.length} timed caption lines. Review wording and phrase timing before export.${warningNotice}`
+          );
+        } catch (cause) {
+          if (!(cause instanceof DOMException && cause.name === "AbortError"))
+            setError(
+              `Whisper transcription is complete and remains available, but local translation failed: ${cause instanceof Error ? cause.message : "unknown translation error"}`
+            );
+        } finally {
+          setIsTranslating(false);
+          setTranslationProgress(null);
+        }
+      }
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError"))
         setError(
@@ -1051,11 +1113,7 @@ export default function Studio() {
       );
       const translated =
         settings.targetLanguage === "en"
-          ? inClip.map(cue => ({
-              ...cue,
-              id: `translated-en-${cue.id}`,
-              words: [],
-            }))
+          ? copyEnglishCues(inClip)
           : await translateCues(
               inClip,
               settings.targetLanguage,
@@ -1063,17 +1121,14 @@ export default function Studio() {
               controller.signal
             );
       invalidateClipOutputs([activeClip.id]);
-      const keep = project.translatedCues.filter(
-        cue =>
-          !inClip.some(
-            source =>
-              cue.id === `translated-${settings.targetLanguage}-${source.id}`
-          )
-      );
       commitProject({
         ...project,
-        translatedCues: [...keep, ...translated].sort(
-          (a, b) => a.start - b.start
+        translatedCues: mergeTranslatedCues(
+          project.translatedCues,
+          project.translatedLanguage,
+          translated,
+          settings.targetLanguage,
+          inClip.map(cue => cue.id)
         ),
         translatedLanguage: settings.targetLanguage,
       });
@@ -1140,14 +1195,17 @@ export default function Studio() {
 
   function chooseSubtitleForExport(clip: ClipSuggestion): CaptionCue[] {
     if (!project) return [];
-    const translatedForClip = project.translatedCues.some(
+    const translatedForLanguage = project.translatedCues.filter(cue =>
+      cue.id.startsWith(`translated-${settings.targetLanguage}-`)
+    );
+    const translatedForClip = translatedForLanguage.some(
       cue => cue.end >= clip.start && cue.start <= clip.end
     );
     const cues =
       settings.targetLanguage !== "none" &&
       project.translatedLanguage === settings.targetLanguage &&
       translatedForClip
-        ? project.translatedCues
+        ? translatedForLanguage
         : sourceCues(project);
     return settings.captionMode === "word" ? toWordCues(cues) : cues;
   }
@@ -1155,18 +1213,23 @@ export default function Studio() {
   function exportCaptionFile(kind: "srt" | "vtt") {
     if (!activeClip) return;
     const duration = activeClip.end - activeClip.start;
+    const ranges =
+      settings.silenceRemoval && project?.words.length
+        ? speechKeepRanges(
+            project.words,
+            activeClip.start,
+            activeClip.end,
+            settings.silenceThresholdSeconds
+          ).map(range => ({
+            start: range.start - activeClip.start,
+            end: range.end - activeClip.start,
+          }))
+        : [{ start: 0, end: duration }];
     const cues = chooseSubtitleForExport(activeClip)
       .filter(cue => cue.end >= activeClip.start && cue.start <= activeClip.end)
-      .map(cue => {
-        const start = Math.max(
-          0,
-          Math.min(duration - 0.05, cue.start - activeClip.start)
-        );
-        const end = Math.max(
-          start + 0.05,
-          Math.min(duration, cue.end - activeClip.start)
-        );
-        return { ...cue, start, end };
+      .flatMap(cue => {
+        const remapped = remapCueToOutput(cue, activeClip.start, ranges);
+        return remapped ? [remapped] : [];
       });
     const text = kind === "srt" ? exportSrt(cues) : exportVtt(cues);
     downloadText(
@@ -1658,13 +1721,14 @@ export default function Studio() {
                             Transcribe only — keep the spoken language
                           </option>
                           <option value="transcribe-and-translate">
-                            Transcribe + translate — choose a target below
+                            Transcribe + translate — translate after Whisper
                           </option>
                         </select>
                         <small>
-                          Transcribe only never starts translation. Translation
-                          uses the timed Whisper transcript, not a subtitle
-                          file.
+                          {settings.captionProcessingMode ===
+                          "transcribe-and-translate"
+                            ? "Whisper runs first, then the timed transcript is translated locally. English is kept unchanged."
+                            : "Transcribe only leaves speech in its original language. You can translate the timed transcript later."}
                         </small>
                       </label>
                       <label className="studio-field">
@@ -1685,12 +1749,40 @@ export default function Studio() {
                           ))}
                         </select>
                       </label>
+                      {settings.captionProcessingMode ===
+                        "transcribe-and-translate" && (
+                          <label className="studio-field">
+                            Target language
+                            <select
+                              value={settings.targetLanguage}
+                              onChange={event =>
+                                changeSettings({
+                                  targetLanguage: event.target
+                                    .value as StudioSettings["targetLanguage"],
+                                })
+                              }
+                            >
+                              <option value="none">Choose a target language</option>
+                              <option value="en">English — keep original</option>
+                              <option value="ar">Arabic</option>
+                              <option value="fr">French</option>
+                              <option value="es">Spanish</option>
+                              <option value="de">German</option>
+                            </select>
+                          </label>
+                        )}
                       {!isAnalyzing ? (
                         <button
                           type="button"
                           className="studio-button studio-button--dark"
                           onClick={() => void runTranscription()}
-                          disabled={!metadata?.hasAudio}
+                          disabled={
+                            !metadata?.hasAudio ||
+                            (settings.captionProcessingMode ===
+                              "transcribe-and-translate" &&
+                              (settings.targetLanguage === "none" ||
+                                project.sourceLanguage !== "en"))
+                          }
                         >
                           <Sparkles size={16} />
                           Analyze speech on this device
@@ -1716,6 +1808,21 @@ export default function Studio() {
                         progress={analysisProgress.progress}
                       />
                     )}
+                    {isTranslating && translationProgress && (
+                      <ProgressCard
+                        label={translationProgress.detail}
+                        progress={translationProgress.progress}
+                      />
+                    )}
+                    {settings.captionProcessingMode ===
+                      "transcribe-and-translate" &&
+                      project.sourceLanguage !== "en" && (
+                        <p className="studio-inline-warning">
+                          <AlertTriangle size={15} />
+                          OPUS-MT requires English source speech. Select English
+                          and run Whisper again to translate this recording.
+                        </p>
+                      )}
                     {!metadata?.hasAudio && (
                       <p className="studio-inline-warning">
                         <AlertTriangle size={15} />

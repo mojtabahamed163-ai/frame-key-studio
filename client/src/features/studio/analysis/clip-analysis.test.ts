@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, mapSourceTimeToOutput, normalizeClipBounds, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import { buildCaptionCues, mapSourceTimeToOutput, normalizeClipBounds, remapCueToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
 import type { TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
@@ -252,5 +252,29 @@ describe("local transcript analysis", () => {
     expect(ranges[1].start).toBeGreaterThan(ranges[0].end);
     expect(ranges[0].start).toBe(0);
     expect(ranges[ranges.length - 1].end).toBeLessThan(6);
+  });
+
+  it("remaps sidecar caption times to the compressed video timeline", () => {
+    const ranges = [{ start: 0, end: 2 }, { start: 4, end: 6 }];
+    const cue = { id: "a", start: 14.5, end: 15.5, text: "Later line.", words: [] };
+    expect(remapCueToOutput(cue, 10, ranges)).toMatchObject({
+      start: 2.5,
+      end: 3.5,
+    });
+  });
+
+  it("drops a sidecar caption that falls entirely inside removed silence", () => {
+    const ranges = [{ start: 0, end: 2 }, { start: 4, end: 6 }];
+    const cue = { id: "a", start: 12.5, end: 13.5, text: "Removed line.", words: [] };
+    expect(remapCueToOutput(cue, 10, ranges)).toBeNull();
+  });
+
+  it("keeps a caption spanning retained ranges on the stitched output timeline", () => {
+    const ranges = [{ start: 0, end: 2 }, { start: 4, end: 6 }];
+    const cue = { id: "a", start: 11, end: 16, text: "Across a pause.", words: [] };
+    expect(remapCueToOutput(cue, 10, ranges)).toMatchObject({
+      start: 1,
+      end: 4,
+    });
   });
 });

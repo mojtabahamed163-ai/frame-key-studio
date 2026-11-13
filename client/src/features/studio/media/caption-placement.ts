@@ -3,6 +3,7 @@ import type { CaptionPosition } from "../types";
 export interface CaptionPlacementInput {
   preferred: CaptionPosition;
   faceCenter?: { x: number; y: number } | null;
+  previousPosition?: CaptionPosition;
 }
 
 const ORDER: CaptionPosition[] = ["bottom", "top", "middle"];
@@ -20,13 +21,22 @@ const ANCHORS: Record<CaptionPosition, number> = {
 export function resolveCaptionPosition({
   preferred,
   faceCenter,
+  previousPosition,
 }: CaptionPlacementInput): CaptionPosition {
   if (!faceCenter || !Number.isFinite(faceCenter.y)) return preferred;
   const faceY = Math.max(0, Math.min(1, faceCenter.y));
   const isUnsafe = (position: CaptionPosition) =>
     Math.abs(ANCHORS[position] - faceY) < (position === "middle" ? 0.24 : 0.18);
-  if (!isUnsafe(preferred)) return preferred;
-  return ORDER.find(position => !isUnsafe(position)) ?? preferred;
+  if (previousPosition && !isUnsafe(previousPosition)) return previousPosition;
+  if (!previousPosition && !isUnsafe(preferred)) return preferred;
+  const safeAlternatives = ORDER.filter(position => !isUnsafe(position));
+  return (
+    safeAlternatives.sort(
+      (a, b) =>
+        Math.abs(ANCHORS[a] - ANCHORS[previousPosition ?? preferred]) -
+        Math.abs(ANCHORS[b] - ANCHORS[previousPosition ?? preferred])
+    )[0] ?? preferred
+  );
 }
 
 export function captionAnchor(position: CaptionPosition): number {

@@ -2,7 +2,6 @@
 import { pipeline } from "@huggingface/transformers";
 
 const MODELS: Record<string, string> = {
-  en: "onnx-community/opus-mt-en-en",
   fr: "onnx-community/opus-mt-en-fr",
   es: "onnx-community/opus-mt-en-es",
   de: "onnx-community/opus-mt-en-de",
@@ -18,7 +17,7 @@ let activeLanguage = "";
 
 interface TranslateRequest {
   jobId: string;
-  language: "en" | "fr" | "es" | "de" | "ar";
+  language: "fr" | "es" | "de" | "ar";
   texts: string[];
 }
 

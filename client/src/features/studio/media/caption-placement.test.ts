@@ -23,6 +23,26 @@ describe("caption placement", () => {
         preferred: "top",
         faceCenter: { x: 0.5, y: 0.2 },
       })
-    ).toBe("bottom");
+    ).toBe("middle");
+  });
+
+  it("keeps the previous safe position instead of oscillating as a face moves", () => {
+    expect(
+      resolveCaptionPosition({
+        preferred: "bottom",
+        previousPosition: "top",
+        faceCenter: { x: 0.5, y: 0.5 },
+      })
+    ).toBe("top");
+  });
+
+  it("moves from the previous zone when the face makes it unsafe", () => {
+    expect(
+      resolveCaptionPosition({
+        preferred: "bottom",
+        previousPosition: "top",
+        faceCenter: { x: 0.5, y: 0.2 },
+      })
+    ).toBe("middle");
   });
 });

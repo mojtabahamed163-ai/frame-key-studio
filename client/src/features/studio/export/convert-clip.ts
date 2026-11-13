@@ -556,6 +556,7 @@ export async function exportClip(options: {
     throw new Error("Full-video canvas is unavailable in this browser.");
   let firstVideoTime: number | null = null;
   let firstAudioTime: number | null = null;
+  let stableCaptionPosition = project.settings.captionPosition;
   let bytesWritten = 0;
   let target: BufferTarget | StreamTarget;
   let outputBlob: Blob | undefined;
@@ -680,7 +681,9 @@ export async function exportClip(options: {
             const captionPosition = resolveCaptionPosition({
               preferred: project.settings.captionPosition,
               faceCenter: project.settings.smartFraming ? center : null,
+              previousPosition: stableCaptionPosition,
             });
+            stableCaptionPosition = captionPosition;
             drawCaption(
               context,
               cue,

@@ -394,6 +394,22 @@ export function mapSourceTimeToOutput(time: number, ranges: SpeechRange[]): numb
   return null;
 }
 
+export function remapCueToOutput(
+  cue: CaptionCue,
+  sourceOffset: number,
+  ranges: SpeechRange[]
+): CaptionCue | null {
+  const localStart = cue.start - sourceOffset;
+  const localEnd = cue.end - sourceOffset;
+  if (!Number.isFinite(localStart) || !Number.isFinite(localEnd) || localEnd <= localStart) return null;
+  const overlapping = ranges.filter(range => localEnd > range.start && localStart < range.end);
+  if (!overlapping.length) return null;
+  const start = mapSourceTimeToOutput(Math.max(localStart, overlapping[0].start), ranges);
+  const end = mapSourceTimeToOutput(Math.min(localEnd, overlapping[overlapping.length - 1].end), ranges);
+  if (start === null || end === null || end <= start) return null;
+  return { ...cue, start, end };
+}
+
 export function formatSrtTime(seconds: number): string {
   const millis = Math.max(0, Math.round(seconds * 1000));
   const hours = Math.floor(millis / 3_600_000);

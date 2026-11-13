@@ -56,6 +56,8 @@ export function VideoPreview({
   );
   const sourceWidth = videoSize.src === src ? videoSize.width : 0;
   const sourceHeight = videoSize.src === src ? videoSize.height : 0;
+  const preferredCaptionPosition = useRef(settings.captionPosition);
+  const previousCaptionPosition = useRef(settings.captionPosition);
   const objectPosition = useMemo(
     () =>
       objectPositionForPortraitCrop(
@@ -75,11 +77,17 @@ export function VideoPreview({
   )?.id;
   const titleText =
     clip?.selectedTitle?.trim() || clip?.titleOptions[0]?.trim() || "";
-  const isArabic = settings.targetLanguage === "ar" && Boolean(activeCue);
+  const isArabic = Boolean(activeCue && /[\u0600-\u06FF]/.test(activeCue.text));
+  if (preferredCaptionPosition.current !== settings.captionPosition) {
+    preferredCaptionPosition.current = settings.captionPosition;
+    previousCaptionPosition.current = settings.captionPosition;
+  }
   const captionPosition = resolveCaptionPosition({
     preferred: settings.captionPosition,
     faceCenter: settings.smartFraming ? center : null,
+    previousPosition: previousCaptionPosition.current,
   });
+  previousCaptionPosition.current = captionPosition;
 
   function handleTimeUpdate(event: SyntheticEvent<HTMLVideoElement>) {
     const video = event.currentTarget;
