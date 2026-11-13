@@ -173,6 +173,7 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
   const duration = end - start;
   const clipWords = sentences.flatMap((sentence) => sentence.words);
   const words = text.split(/\s+/).filter(Boolean);
+  const openingText = sentences[0]?.text ?? "";
   const reasons: string[] = [];
   let score = 0;
   const durationScore = 3.5 - Math.min(3.5, Math.abs(duration - 28) / 16);
@@ -182,9 +183,9 @@ function scoreWindow(sentences: Sentence[], start: number, end: number, text: st
     score -= 1.5;
     reasons.push("A shorter fallback segment; review the context before publishing");
   }
-  if (/[?!]/.test(text)) { score += 1.5; reasons.push("Contains a question or emphatic line"); }
+  if (/[?!]/.test(openingText)) { score += 1.5; reasons.push("Opens with a question or emphatic line"); }
   if (/\b\d+(?:\.\d+)?%?\b/.test(text)) { score += 1.25; reasons.push("Includes a concrete number"); }
-  if (HOOK_TERMS.test(text)) { score += 1.1; reasons.push("Opens with a specific topic or useful claim"); }
+  if (HOOK_TERMS.test(openingText)) { score += 1.1; reasons.push("Opens with a specific topic or useful claim"); }
   if (words.length >= 18 && words.length <= 105) { score += 0.65; reasons.push("Has enough context to stand on its own"); }
   const pauses = sentences.slice(1).map((sentence, index) => sentence.start - sentences[index].end).filter((gap) => gap >= 0.18 && gap <= 1.2);
   if (pauses.length) { score += 0.45; reasons.push("Has a natural speech pause"); }

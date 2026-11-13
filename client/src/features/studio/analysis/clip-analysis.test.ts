@@ -99,6 +99,14 @@ describe("local transcript analysis", () => {
     }
   });
 
+  it("does not credit a later keyword as a strong opening", () => {
+    const source = wordsFrom("People discuss these topics every day across many different groups. Why the market matters is that people need better answers today.".split(" "));
+    source[source.length - 1].text = "today.";
+    const candidate = suggestClips(source, 10).find((clip) => clip.start === source[0].start);
+    expect(candidate).toBeDefined();
+    expect(candidate?.reasons).not.toContain("Opens with a specific topic or useful claim");
+  });
+
   it("does not offer a cut that starts at an incomplete sentence before a long pause", () => {
     const unfinished = wordsFrom(["A", "thought", "that", "continues"], 0);
     const complete = wordsFrom(["The", "complete", "sentence", "explains", "the", "housing", "market", "for", "new", "buyers", "this", "year", "before", "they", "compare", "total", "monthly", "costs."], 4);
