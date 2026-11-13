@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cropForPortrait, portraitCropQuality, videoBitrateForHeight } from "./convert-clip";
+import {
+  cropForPortrait,
+  effectivePortraitHeight,
+  portraitCropQuality,
+  videoBitrateForHeight,
+} from "./convert-clip";
 
 describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
@@ -9,6 +14,11 @@ describe("video bitrate profile", () => {
 });
 
 describe("portrait crop geometry", () => {
+  it("does not upscale a 720p or 1080p source to a 1920px canvas", () => {
+    expect(effectivePortraitHeight(1280, 720, 1920)).toBe(720);
+    expect(effectivePortraitHeight(1920, 1080, 1920)).toBe(1080);
+  });
+
   it("reports when 1080 portrait output must enlarge a narrow landscape crop", () => {
     const quality = portraitCropQuality(1920, 1080, 1920);
     expect(quality.cropWidth).toBe(608);
@@ -38,6 +48,11 @@ describe("portrait crop geometry", () => {
   });
 
   it("handles portrait input without cropping and clamps out-of-range centers", () => {
-    expect(cropForPortrait(1080, 1920, 9 / 16, -4, 4)).toEqual({ left: 0, top: 0, width: 1080, height: 1920 });
+    expect(cropForPortrait(1080, 1920, 9 / 16, -4, 4)).toEqual({
+      left: 0,
+      top: 0,
+      width: 1080,
+      height: 1920,
+    });
   });
 });

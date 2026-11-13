@@ -13,90 +13,216 @@ import {
   VideoSample,
   WebMOutputFormat,
 } from "mediabunny";
-import { mapSourceTimeToOutput, normalizeClipBounds, speechKeepRanges } from "../analysis/clip-analysis";
+import {
+  mapSourceTimeToOutput,
+  normalizeClipBounds,
+  speechKeepRanges,
+} from "../analysis/clip-analysis";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { cropForPortrait } from "../media/framing";
-import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetadata } from "../types";
+import { resolveCaptionPosition } from "../media/caption-placement";
+import type {
+  CaptionCue,
+  ClipSuggestion,
+  SpeechRange,
+  StudioProject,
+  VideoMetadata,
+} from "../types";
 
 export { cropForPortrait, portraitCropQuality } from "../media/framing";
 
 const ARABIC_TEXT = /[\u0600-\u06FF]/;
 
-interface WriteChunk { position: number; data: Uint8Array }
+interface WriteChunk {
+  position: number;
+  data: Uint8Array;
+}
 interface FileWritable {
-  write: (data: { type: "write"; position: number; data: Uint8Array }) => Promise<void>;
+  write: (data: {
+    type: "write";
+    position: number;
+    data: Uint8Array;
+  }) => Promise<void>;
   close: () => Promise<void>;
   abort: (reason?: unknown) => Promise<void>;
 }
-interface OutputFileHandle { createWritable: () => Promise<FileWritable> }
+interface OutputFileHandle {
+  createWritable: () => Promise<FileWritable>;
+}
 interface SavePickerWindow extends Window {
-  showSaveFilePicker?: (options: { suggestedName: string; types?: Array<{ description: string; accept: Record<string, string[]> }> }) => Promise<OutputFileHandle>;
+  showSaveFilePicker?: (options: {
+    suggestedName: string;
+    types?: Array<{ description: string; accept: Record<string, string[]> }>;
+  }) => Promise<OutputFileHandle>;
 }
 export type OutputFormat = "mp4" | "webm-vp9" | "webm-vp8";
-export interface ExportProgress { progress: number; phase: string; detail: string }
-export interface ExportResult { filename: string; mimeType: string; blob?: Blob; byteLength: number; streamed: boolean }
+export interface ExportProgress {
+  progress: number;
+  phase: string;
+  detail: string;
+}
+export interface ExportResult {
+  filename: string;
+  mimeType: string;
+  blob?: Blob;
+  byteLength: number;
+  streamed: boolean;
+}
 
 export function videoBitrateForHeight(height: number): number {
   return height === 1920 ? 12_000_000 : 6_000_000;
 }
 
-export async function supportedOutputFormat(height: number): Promise<OutputFormat | null> {
-  if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis)) return null;
-  const width = Math.round(height * 9 / 16);
+/** Never manufacture detail by encoding a canvas taller than the source. */
+export function effectivePortraitHeight(
+  sourceWidth: number,
+  sourceHeight: number,
+  requestedHeight: number
+): number {
+  if (
+    !Number.isFinite(sourceWidth) ||
+    !Number.isFinite(sourceHeight) ||
+    sourceWidth <= 0 ||
+    sourceHeight <= 0
+  )
+    return requestedHeight;
+  const sourcePortraitHeight = Math.max(2, Math.floor(sourceHeight / 2) * 2);
+  return Math.max(2, Math.min(requestedHeight, sourcePortraitHeight));
+}
+
+export async function supportedOutputFormat(
+  height: number
+): Promise<OutputFormat | null> {
+  if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis))
+    return null;
+  const width = Math.round((height * 9) / 16);
   const videoSupported = async (codec: string) => {
     try {
-      const result = await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: videoBitrateForHeight(height), framerate: 30 });
+      const result = await VideoEncoder.isConfigSupported({
+        codec,
+        width,
+        height,
+        bitrate: videoBitrateForHeight(height),
+        framerate: 30,
+      });
       return Boolean(result.supported);
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   };
   const audioSupported = async (codec: string) => {
-    try { return Boolean((await AudioEncoder.isConfigSupported({ codec, sampleRate: 48_000, numberOfChannels: 2, bitrate: 128_000 })).supported); }
-    catch { return false; }
+    try {
+      return Boolean(
+        (
+          await AudioEncoder.isConfigSupported({
+            codec,
+            sampleRate: 48_000,
+            numberOfChannels: 2,
+            bitrate: 128_000,
+          })
+        ).supported
+      );
+    } catch {
+      return false;
+    }
   };
-  if (await videoSupported("avc1.42001f") && await audioSupported("mp4a.40.2")) return "mp4";
-  if (await videoSupported("vp09.00.10.08") && await audioSupported("opus")) return "webm-vp9";
-  if (await videoSupported("vp8") && await audioSupported("opus")) return "webm-vp8";
+  if (
+    (await videoSupported("avc1.42001f")) &&
+    (await audioSupported("mp4a.40.2"))
+  )
+    return "mp4";
+  if ((await videoSupported("vp09.00.10.08")) && (await audioSupported("opus")))
+    return "webm-vp9";
+  if ((await videoSupported("vp8")) && (await audioSupported("opus")))
+    return "webm-vp8";
   return null;
 }
 
-export async function requestSaveTarget(name: string, format: OutputFormat, signal?: AbortSignal): Promise<FileWritable | null> {
+export async function requestSaveTarget(
+  name: string,
+  format: OutputFormat,
+  signal?: AbortSignal
+): Promise<FileWritable | null> {
   const picker = (window as SavePickerWindow).showSaveFilePicker;
   if (!picker) return null;
   let settled = false;
   const pickerRequest = picker({
     suggestedName: name,
-    types: [{ description: format === "mp4" ? "MP4 video" : "WebM video", accept: { [format === "mp4" ? "video/mp4" : "video/webm"]: [`.${format === "mp4" ? "mp4" : "webm"}`] } }],
-  }).then((handle) => handle.createWritable()).then(async (writable) => {
-    if (settled || signal?.aborted) {
-      await writable.abort(new DOMException("Save cancelled.", "AbortError")).catch(() => undefined);
-      return null;
-    }
-    return writable;
-  });
+    types: [
+      {
+        description: format === "mp4" ? "MP4 video" : "WebM video",
+        accept: {
+          [format === "mp4" ? "video/mp4" : "video/webm"]: [
+            `.${format === "mp4" ? "mp4" : "webm"}`,
+          ],
+        },
+      },
+    ],
+  })
+    .then(handle => handle.createWritable())
+    .then(async writable => {
+      if (settled || signal?.aborted) {
+        await writable
+          .abort(new DOMException("Save cancelled.", "AbortError"))
+          .catch(() => undefined);
+        return null;
+      }
+      return writable;
+    });
   // Some embedded browsers expose the API but do not surface its native dialog.
   // Do not block encoding forever in that case; the caller will use BufferTarget.
-  const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500));
-  const aborted = signal ? new Promise<null>((resolve) => signal.addEventListener("abort", () => resolve(null), { once: true })) : new Promise<null>(() => undefined);
+  const timeout = new Promise<null>(resolve =>
+    window.setTimeout(() => resolve(null), 2500)
+  );
+  const aborted = signal
+    ? new Promise<null>(resolve =>
+        signal.addEventListener("abort", () => resolve(null), { once: true })
+      )
+    : new Promise<null>(() => undefined);
   const result = await Promise.race([pickerRequest, timeout, aborted]);
   settled = true;
   return result;
 }
 
-function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
   ctx.beginPath();
   ctx.roundRect(x, y, width, height, radius);
 }
 
-function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined, absoluteTime: number, height: number, settings: StudioProject["settings"], titleActive = false): void {
+function drawCaption(
+  ctx: CanvasRenderingContext2D,
+  cue: CaptionCue | undefined,
+  absoluteTime: number,
+  height: number,
+  settings: StudioProject["settings"],
+  titleActive = false,
+  position = settings.captionPosition
+): void {
   if (!cue) return;
   const style = settings.captionStyle;
   const fontFamily = settings.fontFamily;
-  const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor) ? settings.primaryColor : "#203A31";
-  const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor) ? settings.accentColor : "#C9794B";
+  const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor)
+    ? settings.primaryColor
+    : "#203A31";
+  const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor)
+    ? settings.accentColor
+    : "#C9794B";
   ctx.save();
-  const fontSize = Math.max(34, Math.round(height * (style === "bold" ? 0.039 : 0.032)));
+  const fontSize = Math.max(
+    34,
+    Math.round(height * (style === "bold" ? 0.039 : 0.032))
+  );
   ctx.font = `${style === "bold" ? 800 : 650} ${fontSize}px ${fontFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -106,23 +232,33 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   let line = "";
   for (const token of tokens) {
     const next = line ? `${line} ${token}` : token;
-    if (line && ctx.measureText(next).width > maxWidth) { lines.push(line); line = token; }
-    else line = next;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = token;
+    } else line = next;
   }
   if (line) lines.push(line);
   const visibleLines = lines.slice(0, 3);
   const lineHeight = fontSize * 1.22;
   const blockHeight = visibleLines.length * lineHeight + fontSize * 0.72;
-  const blockWidth = Math.min(maxWidth + 48, Math.max(...visibleLines.map((value) => ctx.measureText(value).width), 0) + 48);
+  const blockWidth = Math.min(
+    maxWidth + 48,
+    Math.max(...visibleLines.map(value => ctx.measureText(value).width), 0) + 48
+  );
   const x = (ctx.canvas.width - blockWidth) / 2;
   // Title cards occupy the upper third during their opening window. If a user
   // selects a top caption, move it to a lower safe zone instead of allowing
   // the two editable elements to collide.
-  const positionY = titleActive && settings.captionPosition === "top"
-    ? 0.78
-    : titleActive && settings.captionPosition === "middle"
-      ? 0.62
-      : settings.captionPosition === "top" ? 0.2 : settings.captionPosition === "middle" ? 0.5 : 0.72;
+  const positionY =
+    titleActive && position === "top"
+      ? 0.78
+      : titleActive && position === "middle"
+        ? 0.62
+        : position === "top"
+          ? 0.2
+          : position === "middle"
+            ? 0.5
+            : 0.72;
   const y = ctx.canvas.height * positionY - blockHeight / 2;
   if (style !== "editorial") {
     ctx.globalAlpha = style === "bold" ? 0.94 : 0.84;
@@ -138,17 +274,28 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
       ctx.fillStyle = "#FFFFFF";
       ctx.shadowColor = primaryColor;
       ctx.shadowBlur = style === "editorial" ? 5 : 0;
-      ctx.fillText(lineText, ctx.canvas.width / 2, y + fontSize * 0.38 + lineIndex * lineHeight, maxWidth);
+      ctx.fillText(
+        lineText,
+        ctx.canvas.width / 2,
+        y + fontSize * 0.38 + lineIndex * lineHeight,
+        maxWidth
+      );
     });
   } else {
     visibleLines.forEach((lineText, lineIndex) => {
       const lineWords = lineText.split(/\s+/);
-      const widths = lineWords.map((word) => ctx.measureText(`${word} `).width);
+      const widths = lineWords.map(word => ctx.measureText(`${word} `).width);
       const totalWidth = widths.reduce((a, b) => a + b, 0);
       let cursor = (ctx.canvas.width - totalWidth) / 2;
       const baseline = y + fontSize * 0.38 + lineIndex * lineHeight;
       lineWords.forEach((word, wordIndex) => {
-        const matched = cue.words.find((item) => item.text.replace(/[.,!?;:]$/, "").toLowerCase() === word.replace(/[.,!?;:]$/, "").toLowerCase() && absoluteTime >= item.start && absoluteTime <= item.end);
+        const matched = cue.words.find(
+          item =>
+            item.text.replace(/[.,!?;:]$/, "").toLowerCase() ===
+              word.replace(/[.,!?;:]$/, "").toLowerCase() &&
+            absoluteTime >= item.start &&
+            absoluteTime <= item.end
+        );
         ctx.fillStyle = matched ? accentColor : "#FFFFFF";
         ctx.shadowColor = primaryColor;
         ctx.shadowBlur = style === "editorial" ? 5 : 0;
@@ -160,11 +307,26 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   ctx.restore();
 }
 
-function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, absoluteTime: number, settings: StudioProject["settings"]): void {
+function drawTitleCard(
+  ctx: CanvasRenderingContext2D,
+  clip: ClipSuggestion,
+  absoluteTime: number,
+  settings: StudioProject["settings"]
+): void {
   const title = (clip.selectedTitle || clip.titleOptions[0] || "").trim();
-  if (!settings.showTitleCard || !title || absoluteTime < clip.start || absoluteTime >= clip.start + 2.8) return;
-  const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor) ? settings.primaryColor : "#203A31";
-  const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor) ? settings.accentColor : "#C9794B";
+  if (
+    !settings.showTitleCard ||
+    !title ||
+    absoluteTime < clip.start ||
+    absoluteTime >= clip.start + 2.8
+  )
+    return;
+  const primaryColor = /^#[0-9a-f]{6}$/i.test(settings.primaryColor)
+    ? settings.primaryColor
+    : "#203A31";
+  const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor)
+    ? settings.accentColor
+    : "#C9794B";
   ctx.save();
   const width = ctx.canvas.width;
   const height = ctx.canvas.height;
@@ -178,21 +340,36 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
   let line = "";
   for (const word of title.split(/\s+/)) {
     const candidate = line ? `${line} ${word}` : word;
-    if (line && ctx.measureText(candidate).width > maxLineWidth) { lines.push(line); line = word; }
-    else line = candidate;
+    if (line && ctx.measureText(candidate).width > maxLineWidth) {
+      lines.push(line);
+      line = word;
+    } else line = candidate;
   }
   if (line) lines.push(line);
   const visible = lines.slice(0, 3);
   const lineHeight = fontSize * 1.25;
   const cardHeight = visible.length * lineHeight + padding;
   const x = padding;
-  const y = settings.titleStyle === "corner" ? height * 0.08 : settings.titleStyle === "minimal" ? height * 0.18 : height * 0.13;
+  const y =
+    settings.titleStyle === "corner"
+      ? height * 0.08
+      : settings.titleStyle === "minimal"
+        ? height * 0.18
+        : height * 0.13;
   ctx.globalAlpha = 0.94;
   const cardX = settings.titleStyle === "corner" ? width * 0.42 : x;
-  const cardWidth = settings.titleStyle === "corner" ? width * 0.53 : width - padding * 2;
+  const cardWidth =
+    settings.titleStyle === "corner" ? width * 0.53 : width - padding * 2;
   if (settings.titleStyle !== "minimal") {
     ctx.fillStyle = primaryColor;
-    roundRect(ctx, cardX, y, cardWidth, cardHeight, Math.round(fontSize * 0.32));
+    roundRect(
+      ctx,
+      cardX,
+      y,
+      cardWidth,
+      cardHeight,
+      Math.round(fontSize * 0.32)
+    );
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -202,15 +379,29 @@ function drawTitleCard(ctx: CanvasRenderingContext2D, clip: ClipSuggestion, abso
     ctx.fill();
   }
   ctx.fillStyle = "#FFFFFF";
-  const textX = settings.titleStyle === "corner" ? cardX + cardWidth / 2 : width / 2;
-  visible.forEach((text, index) => ctx.fillText(text, textX, y + padding / 2 + lineHeight * (index + 0.5), maxLineWidth));
+  const textX =
+    settings.titleStyle === "corner" ? cardX + cardWidth / 2 : width / 2;
+  visible.forEach((text, index) =>
+    ctx.fillText(
+      text,
+      textX,
+      y + padding / 2 + lineHeight * (index + 0.5),
+      maxLineWidth
+    )
+  );
   ctx.restore();
 }
 
-function drawLogo(ctx: CanvasRenderingContext2D, logo: ImageBitmap | null, position: StudioProject["settings"]["logoPosition"], width: number, height: number): void {
+function drawLogo(
+  ctx: CanvasRenderingContext2D,
+  logo: ImageBitmap | null,
+  position: StudioProject["settings"]["logoPosition"],
+  width: number,
+  height: number
+): void {
   if (!logo) return;
   const targetWidth = Math.min(width * 0.2, 190);
-  const targetHeight = targetWidth * logo.height / Math.max(1, logo.width);
+  const targetHeight = (targetWidth * logo.height) / Math.max(1, logo.width);
   const pad = width * 0.045;
   const x = position.endsWith("right") ? width - pad - targetWidth : pad;
   const y = position.startsWith("top") ? pad : height - pad - targetHeight;
@@ -220,36 +411,66 @@ function drawLogo(ctx: CanvasRenderingContext2D, logo: ImageBitmap | null, posit
   ctx.restore();
 }
 
-async function measurePeak(file: File, start: number, end: number, signal: AbortSignal): Promise<number> {
-  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+async function measurePeak(
+  file: File,
+  start: number,
+  end: number,
+  signal: AbortSignal
+): Promise<number> {
+  const input = new Input({
+    source: new BlobSource(file),
+    formats: ALL_FORMATS,
+  });
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track) return 0;
     const sink = new AudioSampleSink(track);
     let peak = 0;
     for await (const sample of sink.samples(start, end)) {
-      if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+      if (signal.aborted)
+        throw new DOMException("Export cancelled.", "AbortError");
       try {
         const buffer = sample.toAudioBuffer();
         for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-          for (const value of buffer.getChannelData(channel)) peak = Math.max(peak, Math.abs(value));
+          for (const value of buffer.getChannelData(channel))
+            peak = Math.max(peak, Math.abs(value));
         }
-      } finally { sample.close(); }
+      } finally {
+        sample.close();
+      }
     }
     return peak;
-  } finally { input.dispose(); }
+  } finally {
+    input.dispose();
+  }
 }
 
-function remapRanges(project: StudioProject, clip: ClipSuggestion): SpeechRange[] {
+function remapRanges(
+  project: StudioProject,
+  clip: ClipSuggestion
+): SpeechRange[] {
   const duration = Math.max(0.05, clip.end - clip.start);
-  if (!project.settings.silenceRemoval || !project.words.length) return [{ start: 0, end: duration }];
-  return speechKeepRanges(project.words, clip.start, clip.end, project.settings.silenceThresholdSeconds)
-    .map((range) => ({ start: clamp(range.start - clip.start, 0, duration), end: clamp(range.end - clip.start, 0, duration) }))
-    .filter((range) => range.end > range.start);
+  if (!project.settings.silenceRemoval || !project.words.length)
+    return [{ start: 0, end: duration }];
+  return speechKeepRanges(
+    project.words,
+    clip.start,
+    clip.end,
+    project.settings.silenceThresholdSeconds
+  )
+    .map(range => ({
+      start: clamp(range.start - clip.start, 0, duration),
+      end: clamp(range.end - clip.start, 0, duration),
+    }))
+    .filter(range => range.end > range.start);
 }
 
-function isWebm(format: OutputFormat): boolean { return format !== "mp4"; }
-function mimeFor(format: OutputFormat): string { return isWebm(format) ? "video/webm" : "video/mp4"; }
+function isWebm(format: OutputFormat): boolean {
+  return format !== "mp4";
+}
+function mimeFor(format: OutputFormat): string {
+  return isWebm(format) ? "video/webm" : "video/mp4";
+}
 
 export async function exportClip(options: {
   file: File;
@@ -262,36 +483,79 @@ export async function exportClip(options: {
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
 }): Promise<ExportResult> {
-  const { file, project, cues, faceKeyframes, format, writable, signal, onProgress } = options;
-  const bounds = normalizeClipBounds(options.clip.start, options.clip.end, project.duration);
-  if (!bounds) throw new Error("The source duration is unavailable. Choose the video again before exporting.");
+  const {
+    file,
+    project,
+    cues,
+    faceKeyframes,
+    format,
+    writable,
+    signal,
+    onProgress,
+  } = options;
+  const bounds = normalizeClipBounds(
+    options.clip.start,
+    options.clip.end,
+    project.duration
+  );
+  if (!bounds)
+    throw new Error(
+      "The source duration is unavailable. Choose the video again before exporting."
+    );
   const clip = { ...options.clip, ...bounds };
   const debug = (phase: string, detail?: unknown) => {
     console.log("[Frame & Key export]", phase, detail ?? "");
   };
   const duration = clip.end - clip.start;
-  if (duration <= 0 || duration > 180) throw new Error("Choose a clip between 1 second and 3 minutes.");
-  const height = project.settings.outputHeight;
-  const width = Math.round(height * 9 / 16);
-  const estimatedBytes = duration * (videoBitrateForHeight(height) + 128_000) / 8 + 4_000_000;
-  if (!writable && estimatedBytes > 84 * 1024 * 1024) throw new Error("This browser cannot stream directly to a file. Use 720p, shorten the clip, or export it on a browser that supports direct file saving.");
+  if (duration <= 0 || duration > 180)
+    throw new Error("Choose a clip between 1 second and 3 minutes.");
+  const height = effectivePortraitHeight(
+    project.width,
+    project.height,
+    project.settings.outputHeight
+  );
+  const width = Math.round((height * 9) / 16);
+  const estimatedBytes =
+    (duration * (videoBitrateForHeight(height) + 128_000)) / 8 + 4_000_000;
+  if (!writable && estimatedBytes > 84 * 1024 * 1024)
+    throw new Error(
+      "This browser cannot stream directly to a file. Use 720p, shorten the clip, or export it on a browser that supports direct file saving."
+    );
   const ranges = remapRanges(project, clip);
-  debug("start", { format, fileBytes: file.size, clipStart: clip.start, clipEnd: clip.end, ranges });
+  debug("start", {
+    format,
+    fileBytes: file.size,
+    clipStart: clip.start,
+    clipEnd: clip.end,
+    ranges,
+  });
   debug("measurePeak:start", { enabled: project.settings.peakNormalize });
-  const peak = project.settings.peakNormalize ? await measurePeak(file, clip.start, clip.end, signal) : 0;
+  const peak = project.settings.peakNormalize
+    ? await measurePeak(file, clip.start, clip.end, signal)
+    : 0;
   debug("measurePeak:done", { peak });
   const gain = peak > 0.001 ? Math.min(5, 0.89 / peak) : 1;
-  const logo = project.settings.logo ? await createImageBitmap(project.settings.logo).catch(() => null) : null;
+  const logo = project.settings.logo
+    ? await createImageBitmap(project.settings.logo).catch(() => null)
+    : null;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("Canvas encoding is unavailable in this browser.");
+  if (!context)
+    throw new Error("Canvas encoding is unavailable in this browser.");
   const fullVideoCanvas = document.createElement("canvas");
   fullVideoCanvas.width = width;
-  fullVideoCanvas.height = Math.max(1, Math.min(height, Math.round(width * project.height / Math.max(1, project.width))));
+  fullVideoCanvas.height = Math.max(
+    1,
+    Math.min(
+      height,
+      Math.round((width * project.height) / Math.max(1, project.width))
+    )
+  );
   const fullVideoContext = fullVideoCanvas.getContext("2d", { alpha: false });
-  if (!fullVideoContext) throw new Error("Full-video canvas is unavailable in this browser.");
+  if (!fullVideoContext)
+    throw new Error("Full-video canvas is unavailable in this browser.");
   let firstVideoTime: number | null = null;
   let firstAudioTime: number | null = null;
   let bytesWritten = 0;
@@ -300,12 +564,23 @@ export async function exportClip(options: {
 
   if (writable) {
     const stream = new WritableStream<WriteChunk>({
-      write: async (chunk) => {
-        bytesWritten = Math.max(bytesWritten, chunk.position + chunk.data.byteLength);
-        await writable.write({ type: "write", position: chunk.position, data: chunk.data });
+      write: async chunk => {
+        bytesWritten = Math.max(
+          bytesWritten,
+          chunk.position + chunk.data.byteLength
+        );
+        await writable.write({
+          type: "write",
+          position: chunk.position,
+          data: chunk.data,
+        });
       },
-      close: async () => { await writable.close(); },
-      abort: async (reason) => { await writable.abort(reason); },
+      close: async () => {
+        await writable.close();
+      },
+      abort: async reason => {
+        await writable.abort(reason);
+      },
     });
     target = new StreamTarget(stream);
   } else {
@@ -315,12 +590,19 @@ export async function exportClip(options: {
     format: isWebm(format) ? new WebMOutputFormat() : new Mp4OutputFormat(),
     target,
   });
-  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  const input = new Input({
+    source: new BlobSource(file),
+    formats: ALL_FORMATS,
+  });
   let conversion: Conversion | null = null;
   let cancelConversion: (() => void) | null = null;
 
   try {
-    onProgress({ progress: 0, phase: "preparing", detail: "Preparing local video processing" });
+    onProgress({
+      progress: 0,
+      phase: "preparing",
+      detail: "Preparing local video processing",
+    });
     debug("Conversion.init:start");
     conversion = await Conversion.init({
       input,
@@ -335,48 +617,101 @@ export async function exportClip(options: {
         frameRate: 30,
         processedWidth: width,
         processedHeight: height,
-        process: (sample) => {
+        process: sample => {
           if (signal.aborted) return null;
           if (firstVideoTime == null) firstVideoTime = sample.timestamp;
           const localTime = Math.max(0, sample.timestamp - firstVideoTime);
           const mappedTime = mapSourceTimeToOutput(localTime, ranges);
           if (mappedTime == null) return null;
           const center = project.settings.smartFraming
-            ? faceCenterAt(faceKeyframes, localTime, project.settings.manualCropX, project.settings.manualCropY)
-            : { x: project.settings.manualCropX, y: project.settings.manualCropY };
+            ? faceCenterAt(
+                faceKeyframes,
+                localTime,
+                project.settings.manualCropX,
+                project.settings.manualCropY
+              )
+            : {
+                x: project.settings.manualCropX,
+                y: project.settings.manualCropY,
+              };
           context.clearRect(0, 0, width, height);
           if (project.settings.framingMode === "full") {
             context.fillStyle = "#17261f";
             context.fillRect(0, 0, width, height);
-            fullVideoContext.clearRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+            fullVideoContext.clearRect(
+              0,
+              0,
+              fullVideoCanvas.width,
+              fullVideoCanvas.height
+            );
             fullVideoContext.fillStyle = "#17261f";
-            fullVideoContext.fillRect(0, 0, fullVideoCanvas.width, fullVideoCanvas.height);
+            fullVideoContext.fillRect(
+              0,
+              0,
+              fullVideoCanvas.width,
+              fullVideoCanvas.height
+            );
             sample.drawWithFit(fullVideoContext, { fit: "fill" });
-            context.drawImage(fullVideoCanvas, 0, (height - fullVideoCanvas.height) / 2, width, fullVideoCanvas.height);
+            context.drawImage(
+              fullVideoCanvas,
+              0,
+              (height - fullVideoCanvas.height) / 2,
+              width,
+              fullVideoCanvas.height
+            );
           } else {
-            const crop = cropForPortrait(sample.displayWidth, sample.displayHeight, 9 / 16, center.x, center.y);
+            const crop = cropForPortrait(
+              sample.displayWidth,
+              sample.displayHeight,
+              9 / 16,
+              center.x,
+              center.y
+            );
             sample.drawWithFit(context, { fit: "cover", crop });
           }
           const absoluteTime = clip.start + localTime;
-          const titleActive = project.settings.showTitleCard && absoluteTime >= clip.start && absoluteTime < clip.start + 2.8;
+          const titleActive =
+            project.settings.showTitleCard &&
+            absoluteTime >= clip.start &&
+            absoluteTime < clip.start + 2.8;
           drawTitleCard(context, clip, absoluteTime, project.settings);
           if (project.settings.showCaptions) {
-            const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
-            drawCaption(context, cue, absoluteTime, height, project.settings, titleActive);
+            const cue = cues.find(
+              item => absoluteTime >= item.start && absoluteTime <= item.end
+            );
+            const captionPosition = resolveCaptionPosition({
+              preferred: project.settings.captionPosition,
+              faceCenter: project.settings.smartFraming ? center : null,
+            });
+            drawCaption(
+              context,
+              cue,
+              absoluteTime,
+              height,
+              project.settings,
+              titleActive,
+              captionPosition
+            );
           }
           drawLogo(context, logo, project.settings.logoPosition, width, height);
-          const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
+          const frame = new VideoSample(canvas, {
+            timestamp: mappedTime,
+            duration: sample.duration,
+          });
           return frame;
         },
       },
       audio: {
         codec: format === "mp4" ? "aac" : "opus",
         quality: new Quality({ bitrate: 128_000 }),
-        process: (sample) => {
+        process: sample => {
           if (signal.aborted) return null;
           if (firstAudioTime == null) firstAudioTime = sample.timestamp;
           const localTime = Math.max(0, sample.timestamp - firstAudioTime);
-          const mappedTime = mapSourceTimeToOutput(localTime + sample.duration / 2, ranges);
+          const mappedTime = mapSourceTimeToOutput(
+            localTime + sample.duration / 2,
+            ranges
+          );
           if (mappedTime == null) return null;
           const buffer = sample.toAudioBuffer();
           const frames = sample.numberOfFrames;
@@ -385,37 +720,71 @@ export async function exportClip(options: {
           for (let channel = 0; channel < channels; channel += 1) {
             const channelData = buffer.getChannelData(channel);
             const offset = channel * frames;
-            for (let index = 0; index < frames; index += 1) data[offset + index] = Math.max(-1, Math.min(1, channelData[index] * gain));
+            for (let index = 0; index < frames; index += 1)
+              data[offset + index] = Math.max(
+                -1,
+                Math.min(1, channelData[index] * gain)
+              );
           }
-          const transformed = new AudioSample({ data, format: "f32-planar", numberOfChannels: channels, sampleRate: sample.sampleRate, timestamp: mappedTime });
+          const transformed = new AudioSample({
+            data,
+            format: "f32-planar",
+            numberOfChannels: channels,
+            sampleRate: sample.sampleRate,
+            timestamp: mappedTime,
+          });
           return transformed;
         },
       },
     });
-    cancelConversion = () => { void conversion?.cancel(); };
+    cancelConversion = () => {
+      void conversion?.cancel();
+    };
     signal.addEventListener("abort", cancelConversion, { once: true });
-    debug("Conversion.init:done", { isValid: conversion.isValid, discardedTracks: conversion.discardedTracks.map((item) => item.reason) });
+    debug("Conversion.init:done", {
+      isValid: conversion.isValid,
+      discardedTracks: conversion.discardedTracks.map(item => item.reason),
+    });
     if (!conversion.isValid) {
-      const discarded = conversion.discardedTracks.map((item) => item.reason).filter(Boolean).join("; ");
-      throw new Error(discarded || "This video codec is not supported for export in this browser.");
+      const discarded = conversion.discardedTracks
+        .map(item => item.reason)
+        .filter(Boolean)
+        .join("; ");
+      throw new Error(
+        discarded ||
+          "This video codec is not supported for export in this browser."
+      );
     }
-    conversion.onProgress = (progress) => onProgress({ progress, phase: "encoding", detail: `${Math.round(progress * 100)}% — encoding stays on this device` });
-    if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+    conversion.onProgress = progress =>
+      onProgress({
+        progress,
+        phase: "encoding",
+        detail: `${Math.round(progress * 100)}% — encoding stays on this device`,
+      });
+    if (signal.aborted)
+      throw new DOMException("Export cancelled.", "AbortError");
     debug("Conversion.execute:start");
     await conversion.execute({ pauseSignal: signal });
     debug("Conversion.execute:done", { outputState: output.state });
     // Mediabunny may finish after a processor has observed an abort. Never expose
     // that partial/finalized file as a successful export.
-    if (signal.aborted) throw new DOMException("Export cancelled.", "AbortError");
+    if (signal.aborted)
+      throw new DOMException("Export cancelled.", "AbortError");
     if (target instanceof BufferTarget) {
       const buffer = target.buffer;
-      if (!buffer) throw new Error("The export completed without a file buffer.");
+      if (!buffer)
+        throw new Error("The export completed without a file buffer.");
       outputBlob = new Blob([buffer], { type: mimeFor(format) });
       bytesWritten = buffer.byteLength;
       debug("BufferTarget:done", { bytesWritten });
     }
-    if (bytesWritten <= 0) throw new Error("The export completed without writing a media file.");
-    onProgress({ progress: 1, phase: "complete", detail: "Your file is ready on this device" });
+    if (bytesWritten <= 0)
+      throw new Error("The export completed without writing a media file.");
+    onProgress({
+      progress: 1,
+      phase: "complete",
+      detail: "Your file is ready on this device",
+    });
     return {
       filename: `${(clip.selectedTitle || project.name).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 56)}-clip-${Math.round(clip.start)}.${isWebm(format) ? "webm" : "mp4"}`,
       mimeType: mimeFor(format),
@@ -424,11 +793,22 @@ export async function exportClip(options: {
       streamed: Boolean(writable),
     };
   } catch (error) {
-    debug("failed", error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error);
-    if (output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => undefined);
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    const message = error instanceof Error ? error.message : "Export failed on this device.";
-    if (/memory|buffer|allocation/i.test(message)) throw new Error("This browser ran out of memory. Try 720p, a shorter clip, or saving one clip at a time.");
+    debug(
+      "failed",
+      error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : error
+    );
+    if (output.state !== "finalized" && output.state !== "canceled")
+      await output.cancel().catch(() => undefined);
+    if (error instanceof DOMException && error.name === "AbortError")
+      throw error;
+    const message =
+      error instanceof Error ? error.message : "Export failed on this device.";
+    if (/memory|buffer|allocation/i.test(message))
+      throw new Error(
+        "This browser ran out of memory. Try 720p, a shorter clip, or saving one clip at a time."
+      );
     throw new Error(message);
   } finally {
     if (cancelConversion) signal.removeEventListener("abort", cancelConversion);

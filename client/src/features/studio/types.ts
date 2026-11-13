@@ -17,9 +17,19 @@ export type TranscriptionWarningCode =
   | "expanded-multiword-chunk"
   | "tail-word-time-clamped";
 
-export interface SpeechRange { start: number; end: number }
+export interface SpeechRange {
+  start: number;
+  end: number;
+}
 export type FaceTrackingState = "detected" | "held" | "manual";
-export interface CropKeyframe { time: number; x: number; y: number; confidence: number; framingSafe?: boolean; state?: FaceTrackingState }
+export interface CropKeyframe {
+  time: number;
+  x: number;
+  y: number;
+  confidence: number;
+  framingSafe?: boolean;
+  state?: FaceTrackingState;
+}
 
 export interface CaptionCue {
   id: string;
@@ -56,15 +66,36 @@ export type CaptionMode = "word" | "block";
 export type CaptionPosition = "top" | "middle" | "bottom";
 export type TitleStyle = "banner" | "minimal" | "split" | "corner";
 export type TemplateId =
-  | "estate-hero" | "estate-editorial" | "estate-split"
-  | "food-menu" | "food-street" | "food-editorial"
-  | "edu-notes" | "edu-highlight" | "edu-whiteboard"
-  | "podcast-lowerthird" | "podcast-wave" | "podcast-bold"
-  | "marketing-launch" | "marketing-social" | "marketing-report";
-export type LogoPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  | "estate-hero"
+  | "estate-editorial"
+  | "estate-split"
+  | "food-menu"
+  | "food-street"
+  | "food-editorial"
+  | "edu-notes"
+  | "edu-highlight"
+  | "edu-whiteboard"
+  | "podcast-lowerthird"
+  | "podcast-wave"
+  | "podcast-bold"
+  | "marketing-launch"
+  | "marketing-social"
+  | "marketing-report";
+export type LogoPosition =
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
 export type FramingMode = "fill" | "full";
-export type OutputPlatform = "generic" | "tiktok" | "instagram-reels" | "youtube-shorts";
-export type TranslationLanguage = "none" | "fr" | "es" | "de" | "ar";
+export type OutputPlatform =
+  | "generic"
+  | "tiktok"
+  | "instagram-reels"
+  | "youtube-shorts";
+export type TranslationLanguage = "none" | "en" | "ar" | "fr" | "es" | "de";
+export type CaptionProcessingMode =
+  | "transcribe-only"
+  | "transcribe-and-translate";
 export type StepId = "upload" | "select" | "edit" | "export";
 
 export interface BrandSettings {
@@ -101,6 +132,7 @@ export interface StudioSettings extends BrandSettings {
   outputHeight: 1280 | 1920;
   outputPlatform: OutputPlatform;
   targetLanguage: TranslationLanguage;
+  captionProcessingMode: CaptionProcessingMode;
 }
 
 export interface StudioProject {
@@ -162,4 +194,5 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   outputHeight: 1920,
   outputPlatform: "generic",
   targetLanguage: "none",
+  captionProcessingMode: "transcribe-only",
 };
