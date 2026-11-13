@@ -64,6 +64,7 @@ export type TemplateId =
 export type LogoPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 export type FramingMode = "fill" | "full";
 export type OutputPlatform = "generic" | "tiktok" | "instagram-reels" | "youtube-shorts";
+export type TranslationLanguage = "none" | "fr" | "es" | "de" | "ar";
 export type StepId = "upload" | "select" | "edit" | "export";
 
 export interface BrandSettings {
@@ -99,7 +100,7 @@ export interface StudioSettings extends BrandSettings {
   showTitleCard: boolean;
   outputHeight: 1280 | 1920;
   outputPlatform: OutputPlatform;
-  targetLanguage: "none" | "fr" | "es" | "de";
+  targetLanguage: TranslationLanguage;
 }
 
 export interface StudioProject {
@@ -117,7 +118,7 @@ export interface StudioProject {
   words: TranscriptWord[];
   editedCues: CaptionCue[];
   translatedCues: CaptionCue[];
-  translatedLanguage: "none" | "fr" | "es" | "de";
+  translatedLanguage: TranslationLanguage;
   sourceLanguage: string;
   clips: ClipSuggestion[];
   selectedClipId: string | null;

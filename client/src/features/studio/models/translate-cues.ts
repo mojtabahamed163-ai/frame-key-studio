@@ -13,7 +13,7 @@ interface WorkerMessage {
 
 export interface TranslationProgress { stage: "model" | "translation"; progress: number; detail: string }
 
-export function translateCues(cues: CaptionCue[], language: "fr" | "es" | "de", onProgress: (progress: TranslationProgress) => void, signal?: AbortSignal): Promise<CaptionCue[]> {
+export function translateCues(cues: CaptionCue[], language: "fr" | "es" | "de" | "ar", onProgress: (progress: TranslationProgress) => void, signal?: AbortSignal): Promise<CaptionCue[]> {
   const worker = new Worker(new URL("../workers/translate.worker.ts", import.meta.url), { type: "module", name: "framekey-local-translation" });
   const jobId = `translate-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {

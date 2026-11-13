@@ -5,19 +5,20 @@ const MODELS: Record<string, string> = {
   fr: "onnx-community/opus-mt-en-fr",
   es: "onnx-community/opus-mt-en-es",
   de: "onnx-community/opus-mt-en-de",
+  ar: "onnx-community/opus-mt-en-ar",
 };
 type TranslationResult = Array<{ translation_text?: string }>;
 type TranslationPipeline = (text: string, options: Record<string, unknown>) => Promise<TranslationResult>;
 let translator: TranslationPipeline | null = null;
 let activeLanguage = "";
 
-interface TranslateRequest { jobId: string; language: "fr" | "es" | "de"; texts: string[] }
+interface TranslateRequest { jobId: string; language: "fr" | "es" | "de" | "ar"; texts: string[] }
 
 self.onmessage = async (event: MessageEvent<TranslateRequest>) => {
   const { jobId, language, texts } = event.data;
   try {
     const model = MODELS[language];
-    if (!model) throw new Error("Choose French, Spanish, or German for this local translation model.");
+    if (!model) throw new Error("Choose Arabic, French, Spanish, or German for this local translation model.");
     if (!translator || activeLanguage !== language) {
       translator = await pipeline("translation", model, {
         dtype: "q8",

@@ -20,6 +20,8 @@ import type { CaptionCue, ClipSuggestion, SpeechRange, StudioProject, VideoMetad
 
 export { cropForPortrait, portraitCropQuality } from "../media/framing";
 
+const ARABIC_TEXT = /[\u0600-\u06FF]/;
+
 interface WriteChunk { position: number; data: Uint8Array }
 interface FileWritable {
   write: (data: { type: "write"; position: number; data: Uint8Array }) => Promise<void>;
@@ -122,21 +124,32 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
     ctx.fill();
     ctx.globalAlpha = 1;
   }
-  visibleLines.forEach((lineText, lineIndex) => {
-    const lineWords = lineText.split(/\s+/);
-    const widths = lineWords.map((word) => ctx.measureText(`${word} `).width);
-    const totalWidth = widths.reduce((a, b) => a + b, 0);
-    let cursor = (ctx.canvas.width - totalWidth) / 2;
-    const baseline = y + fontSize * 0.38 + lineIndex * lineHeight;
-    lineWords.forEach((word, wordIndex) => {
-      const matched = cue.words.find((item) => item.text.replace(/[.,!?;:]$/, "").toLowerCase() === word.replace(/[.,!?;:]$/, "").toLowerCase() && absoluteTime >= item.start && absoluteTime <= item.end);
-      ctx.fillStyle = matched ? accentColor : "#FFFFFF";
+  const arabic = ARABIC_TEXT.test(cue.text);
+  ctx.direction = arabic ? "rtl" : "ltr";
+  if (arabic) {
+    visibleLines.forEach((lineText, lineIndex) => {
+      ctx.fillStyle = "#FFFFFF";
       ctx.shadowColor = primaryColor;
       ctx.shadowBlur = style === "editorial" ? 5 : 0;
-      ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
-      cursor += widths[wordIndex];
+      ctx.fillText(lineText, ctx.canvas.width / 2, y + fontSize * 0.38 + lineIndex * lineHeight, maxWidth);
     });
-  });
+  } else {
+    visibleLines.forEach((lineText, lineIndex) => {
+      const lineWords = lineText.split(/\s+/);
+      const widths = lineWords.map((word) => ctx.measureText(`${word} `).width);
+      const totalWidth = widths.reduce((a, b) => a + b, 0);
+      let cursor = (ctx.canvas.width - totalWidth) / 2;
+      const baseline = y + fontSize * 0.38 + lineIndex * lineHeight;
+      lineWords.forEach((word, wordIndex) => {
+        const matched = cue.words.find((item) => item.text.replace(/[.,!?;:]$/, "").toLowerCase() === word.replace(/[.,!?;:]$/, "").toLowerCase() && absoluteTime >= item.start && absoluteTime <= item.end);
+        ctx.fillStyle = matched ? accentColor : "#FFFFFF";
+        ctx.shadowColor = primaryColor;
+        ctx.shadowBlur = style === "editorial" ? 5 : 0;
+        ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
+        cursor += widths[wordIndex];
+      });
+    });
+  }
   ctx.restore();
 }
 
