@@ -12,7 +12,7 @@
 
 ## 2. المقاطع الفعلية ونصوصها ومددها
 
-أُنشئت ملفات قص مؤقتة من المصدر عند حدود الاقتراحات، وشُوهدت كاملة بمراجعة صوت/صورة، كما فُرّغ صوت كل مقطع مستقلاً. النصوص أدناه هي نصوص **مراجعة للاستماع**؛ التقطيع والتلعثم وتداخل الأصوات اختُصر حيث لا يضيف وضوحاً، ولم تُقدَّم مخرجات Whisper الآلية على أنها تفريغ محقّق.
+أُنشئت ملفات قص من المصدر عند حدود الاقتراحات، وشُوهدت كاملة بمراجعة صوت/صورة، كما فُرّغ صوت كل مقطع مستقلاً. أُرفقت [المقاطع الثلاثة](deliverables/mission2/candidates/clip-1.webm)، [الثاني](deliverables/mission2/candidates/clip-2.webm)، و[الثالث](deliverables/mission2/candidates/clip-3.webm) مع [تفريغات الصوت المستقلة](deliverables/mission2/evidence/transcripts/clip-1-independent-stt.txt) ([2](deliverables/mission2/evidence/transcripts/clip-2-independent-stt.txt)، [3](deliverables/mission2/evidence/transcripts/clip-3-independent-stt.txt)). وتوجد [ملاحظات تحليل الفيديو للمرشح 1](deliverables/mission2/evidence/video-reviews/clip-1-review.md)، [2](deliverables/mission2/evidence/video-reviews/clip-2-review.md)، و[3](deliverables/mission2/evidence/video-reviews/clip-3-review.md) كأدلة مساعدة آلية، لا كبديل عن الاستماع. النصوص أدناه هي نصوص **مراجعة للاستماع**؛ التقطيع والتلعثم وتداخل الأصوات اختُصر حيث لا يضيف وضوحاً، ولم تُقدَّم مخرجات Whisper الآلية على أنها تفريغ محقّق.
 
 ### المرشح 1 — 00:53.66 إلى 01:17.28 — **23.62 ثانية**
 
