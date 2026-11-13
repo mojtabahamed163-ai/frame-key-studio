@@ -16,7 +16,7 @@ import { createZip, downloadBlob, downloadText, safeFileStem } from "@/features/
 import { inspectVideo, transcribeVideo, type AnalysisProgress } from "@/features/studio/media/analyze-video";
 import { summarizeFaceTrack, trackLargestFace, type FaceKeyframe, type FaceTrackingProgress } from "@/features/studio/media/face-tracking";
 import { translateCues, type TranslationProgress } from "@/features/studio/models/translate-cues";
-import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, saveProject, saveSettings, saveSourceToOpfs, sourceMatchesProject } from "@/features/studio/storage/project-store";
+import { createProject, deleteProject, listProjects, loadSettings, loadSourceFromOpfs, loadSourceLocally, saveProject, saveSettings, saveSourceLocally as saveSourceFileLocally } from "@/features/studio/storage/project-store";
 import { DEFAULT_SETTINGS, type CaptionCue, type ClipSuggestion, type StepId, type StudioProject, type StudioSettings, type TranscriptionWarningCode, type VideoMetadata } from "@/features/studio/types";
 import type { ExportProgress, ExportResult, OutputFormat } from "@/features/studio/export/convert-clip";
 import { portraitCropQuality, requestSaveTarget, supportedOutputFormat, exportClip, videoBitrateForHeight } from "@/features/studio/export/convert-clip";
@@ -94,6 +94,7 @@ export default function Studio() {
   const faceController = useRef<AbortController | null>(null);
   const exportController = useRef<AbortController | null>(null);
   const translationController = useRef<AbortController | null>(null);
+  const sourceSaveInProgress = useRef(false);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const [step, setStep] = useState<StepId>("upload");
@@ -162,6 +163,7 @@ export default function Studio() {
 
   useEffect(() => {
     if (!project || !localStorageReady) return;
+    if (sourceSaveInProgress.current) return;
     setSaveState("saving");
     const timer = window.setTimeout(() => {
       void saveProject(project).then(async () => {
@@ -244,6 +246,7 @@ export default function Studio() {
       }
       const merged: StudioProject = {
         ...saved,
+        sourceSavedLocally: saved.sourceSavedLocally ?? saved.sourceSavedInOpfs ?? false,
         settings: { ...DEFAULT_SETTINGS, ...saved.settings },
         editedCues: saved.editedCues ?? [],
         translatedCues: saved.translatedCues ?? [],
@@ -305,10 +308,11 @@ export default function Studio() {
       setClipProgress({});
       setRenderErrors({});
       setSelectedForBatch([]);
+      setSaveState("saving");
       setNotice(file.size >= LARGE_FILE_WARNING_BYTES
-        ? "Video selected locally. This larger file may use substantial memory during analysis or export; close other heavy tabs and consider saving the source locally."
-        : "Video selected. It has not been uploaded to the website.");
-      void saveProject(next).then(() => listProjects().then(setSavedProjects)).catch(() => setSaveState("error"));
+        ? "Video selected locally. Saving the larger source may take a moment; keep this tab open until local save completes."
+        : "Video selected locally. Saving the original source on this device…");
+      void persistSource(next, file);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The browser could not read this video format.");
     }
@@ -322,7 +326,9 @@ export default function Studio() {
 
   async function openSavedProject(saved: StudioProject) {
     setError("");
-    const localFile = saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null;
+    const localFile = saved.sourceSavedLocally
+      ? await loadSourceLocally(saved.id) ?? (saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : null)
+      : saved.sourceSavedInOpfs ? await loadSourceFromOpfs(saved.id) : await loadSourceLocally(saved.id);
     if (localFile) {
       await activateSavedProject(saved, localFile);
       return;
@@ -341,21 +347,30 @@ export default function Studio() {
     }
   }
 
+  async function persistSource(projectToSave: StudioProject, file: File) {
+    sourceSaveInProgress.current = true;
+    setSaveState("saving");
+    setNotice("Saving the original source in this browser’s private local storage…");
+    try {
+      await saveSourceFileLocally(projectToSave.id, file);
+      const savedProject = { ...projectToSave, sourceSavedLocally: true, sourceSavedInOpfs: undefined };
+      commitProject(savedProject);
+      await saveProject(savedProject);
+      setSaveState("saved");
+      setSavedProjects(await listProjects());
+      setNotice("Source video and project settings saved on this device. Nothing was uploaded.");
+    } catch (cause) {
+      setSaveState("error");
+      setError(cause instanceof Error ? cause.message : "The source could not be saved locally. Keep the original video file to reopen it.");
+    } finally {
+      sourceSaveInProgress.current = false;
+    }
+  }
+
   async function saveSourceLocally() {
     if (!project || !sourceFile) return;
     setError("");
-    setNotice("Saving the original source in this browser’s private local storage…");
-    try {
-      const saved = await saveSourceToOpfs(project.id, sourceFile);
-      if (!saved) {
-        setError("This browser could not store the source file locally. Project notes still auto-save; keep the original video file to reopen it.");
-        return;
-      }
-      commitProject({ ...project, sourceSavedInOpfs: true });
-      setNotice("Source video saved on this device. It was not uploaded.");
-    } catch (cause) {
-      setError(cause instanceof Error ? `The source could not be saved locally: ${cause.message}` : "The source could not be saved locally. Keep the original video file to reopen it.");
-    }
+    await persistSource(project, sourceFile);
   }
 
   async function runTranscription() {
@@ -812,8 +827,8 @@ export default function Studio() {
                 <div className="studio-source-summary__file"><span><Film size={17} /></span><div><strong>{sourceFile.name}</strong><small>{formatBytes(sourceFile.size)} · {metadata.width} × {metadata.height} · {metadata.hasAudio ? "audio detected" : "no audio track"}</small></div></div>
                 <div className="studio-source-summary__duration"><Clock3 size={15} />{formatTime(metadata.duration)}</div>
                 <div className="studio-source-summary__actions">
-                  <button type="button" className="studio-text-button" onClick={saveProjectSourceToggle} disabled={project.sourceSavedInOpfs}><HardDrive size={14} />{project.sourceSavedInOpfs ? "Source saved on this device" : "Save source locally (optional)"}</button>
-                  <span>{project.sourceSavedInOpfs ? "OPFS" : "Project notes auto-save; source file does not"}</span>
+                  <button type="button" className="studio-text-button" onClick={saveProjectSourceToggle} disabled={project.sourceSavedLocally || saveState === "saving"}><HardDrive size={14} />{project.sourceSavedLocally ? "Source saved on this device" : saveState === "saving" ? "Saving source…" : "Save source locally"}</button>
+                  <span>{project.sourceSavedLocally ? "IndexedDB local file storage" : "Source not saved yet"}</span>
                 </div>
               </div>}
               {sourceFile && sourceFile.size >= LARGE_FILE_WARNING_BYTES && <p className="studio-inline-warning"><AlertTriangle size={15} />This is a larger local file. Speech analysis is chunked, but browser memory and codec support still depend on the device. Export longer clips one at a time when possible.</p>}

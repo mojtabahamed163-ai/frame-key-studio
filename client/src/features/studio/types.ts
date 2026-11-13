@@ -125,7 +125,9 @@ export interface StudioProject {
   faceKeyframesByClip: Record<string, CropKeyframe[]>;
   transcriptionWarnings?: TranscriptionWarningCode[];
   settings: StudioSettings;
-  sourceSavedInOpfs: boolean;
+  sourceSavedLocally: boolean;
+  /** Legacy flag retained while older IndexedDB project records are migrated. */
+  sourceSavedInOpfs?: boolean;
 }
 
 export interface VideoMetadata {

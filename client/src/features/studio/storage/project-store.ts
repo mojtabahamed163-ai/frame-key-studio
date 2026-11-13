@@ -1,10 +1,11 @@
 import { DEFAULT_SETTINGS, type BrandKit, type BrandSettings, type StudioProject, type StudioSettings } from "../types";
 
 const DB_NAME = "framekey-studio-local";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const PROJECTS = "projects";
 const PREFERENCES = "preferences";
 const BRAND_KITS = "brandKits";
+const SOURCES = "sources";
 let writeQueue: Promise<void> = Promise.resolve();
 
 type BrowserStorageManager = StorageManager & {
@@ -38,6 +39,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PREFERENCES)) db.createObjectStore(PREFERENCES, { keyPath: "key" });
       if (!db.objectStoreNames.contains(BRAND_KITS)) db.createObjectStore(BRAND_KITS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(SOURCES)) db.createObjectStore(SOURCES, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Could not open local project storage."));
@@ -131,8 +133,32 @@ export function createProject(sourceFile: File, settings: StudioSettings): Studi
     selectedClipId: null,
     faceKeyframesByClip: {},
     settings,
-    sourceSavedInOpfs: false,
+    sourceSavedLocally: false,
   };
+}
+
+function storageFailure(cause: unknown): Error {
+  const name = cause instanceof DOMException ? cause.name : "";
+  if (name === "QuotaExceededError") return new Error("The browser storage quota is full. Delete an older saved project or free device storage, then try again.");
+  if (name === "NotAllowedError" || name === "SecurityError") return new Error("The browser refused local file storage. Allow site storage or keep the original video file to reopen this project.");
+  return cause instanceof Error ? cause : new Error("The source video could not be saved in local browser storage.");
+}
+
+export async function saveSourceLocally(projectId: string, file: File): Promise<void> {
+  await enqueueWrite(() => requestValue<IDBValidKey>(SOURCES, "readwrite", (store) => store.put({
+    id: projectId,
+    file,
+    name: file.name,
+    type: file.type,
+    lastModified: file.lastModified,
+    size: file.size,
+  }))).catch((cause) => { throw storageFailure(cause); });
+}
+
+export async function loadSourceLocally(projectId: string): Promise<File | null> {
+  const record = await requestValue<{ file?: Blob; name?: string; type?: string; lastModified?: number } | undefined>(SOURCES, "readonly", (store) => store.get(projectId));
+  if (!record?.file) return null;
+  return new File([record.file], record.name || `${projectId}.source`, { type: record.type || record.file.type, lastModified: record.lastModified || Date.now() });
 }
 
 export async function saveSourceToOpfs(projectId: string, file: File): Promise<boolean> {
@@ -170,7 +196,8 @@ export async function loadSourceFromOpfs(projectId: string): Promise<File | null
 
 export async function deleteProject(project: StudioProject): Promise<void> {
   await requestValue<undefined>(PROJECTS, "readwrite", (store) => store.delete(project.id));
-  if (!project.sourceSavedInOpfs) return;
+  await requestValue<undefined>(SOURCES, "readwrite", (store) => store.delete(project.id)).catch(() => undefined);
+  if (!(project.sourceSavedLocally || project.sourceSavedInOpfs)) return;
   const storage = navigator.storage as BrowserStorageManager;
   try {
     if (!storage.getDirectory) return;

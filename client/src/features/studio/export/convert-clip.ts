@@ -89,7 +89,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
   ctx.roundRect(x, y, width, height, radius);
 }
 
-function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined, absoluteTime: number, height: number, settings: StudioProject["settings"]): void {
+function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined, absoluteTime: number, height: number, settings: StudioProject["settings"], titleActive = false): void {
   if (!cue) return;
   const style = settings.captionStyle;
   const fontFamily = settings.fontFamily;
@@ -115,7 +115,14 @@ function drawCaption(ctx: CanvasRenderingContext2D, cue: CaptionCue | undefined,
   const blockHeight = visibleLines.length * lineHeight + fontSize * 0.72;
   const blockWidth = Math.min(maxWidth + 48, Math.max(...visibleLines.map((value) => ctx.measureText(value).width), 0) + 48);
   const x = (ctx.canvas.width - blockWidth) / 2;
-  const positionY = settings.captionPosition === "top" ? 0.2 : settings.captionPosition === "middle" ? 0.5 : 0.72;
+  // Title cards occupy the upper third during their opening window. If a user
+  // selects a top caption, move it to a lower safe zone instead of allowing
+  // the two editable elements to collide.
+  const positionY = titleActive && settings.captionPosition === "top"
+    ? 0.78
+    : titleActive && settings.captionPosition === "middle"
+      ? 0.62
+      : settings.captionPosition === "top" ? 0.2 : settings.captionPosition === "middle" ? 0.5 : 0.72;
   const y = ctx.canvas.height * positionY - blockHeight / 2;
   if (style !== "editorial") {
     ctx.globalAlpha = style === "bold" ? 0.94 : 0.84;
@@ -351,11 +358,12 @@ export async function exportClip(options: {
             sample.drawWithFit(context, { fit: "cover", crop });
           }
           const absoluteTime = clip.start + localTime;
+          const titleActive = project.settings.showTitleCard && absoluteTime >= clip.start && absoluteTime < clip.start + 2.8;
+          drawTitleCard(context, clip, absoluteTime, project.settings);
           if (project.settings.showCaptions) {
             const cue = cues.find((item) => absoluteTime >= item.start && absoluteTime <= item.end);
-            drawCaption(context, cue, absoluteTime, height, project.settings);
+            drawCaption(context, cue, absoluteTime, height, project.settings, titleActive);
           }
-          drawTitleCard(context, clip, absoluteTime, project.settings);
           drawLogo(context, logo, project.settings.logoPosition, width, height);
           const frame = new VideoSample(canvas, { timestamp: mappedTime, duration: sample.duration });
           return frame;

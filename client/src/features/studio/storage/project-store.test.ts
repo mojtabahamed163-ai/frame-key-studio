@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { defaultBrandSettings, deleteBrandKit, listBrandKits, saveBrandKit, sourceMatchesProject } from "./project-store";
+import { defaultBrandSettings, deleteBrandKit, listBrandKits, loadSourceLocally, saveBrandKit, saveSourceLocally, sourceMatchesProject } from "./project-store";
 import { DEFAULT_SETTINGS } from "../types";
 
 beforeAll(() => {
@@ -38,5 +38,19 @@ describe("Brand Kit IndexedDB persistence", () => {
 
     await deleteBrandKit(id);
     expect((await listBrandKits()).some((item) => item.id === id)).toBe(false);
+  });
+});
+
+describe("source file IndexedDB persistence", () => {
+  it("round-trips the original video file and its identity", async () => {
+    const projectId = `source-test-${Date.now()}`;
+    const source = new File(["video-bytes"], "original.webm", { type: "video/webm", lastModified: 1234 });
+    await saveSourceLocally(projectId, source);
+    const restored = await loadSourceLocally(projectId);
+    expect(restored).not.toBeNull();
+    expect(restored?.name).toBe(source.name);
+    expect(restored?.type).toBe(source.type);
+    expect(restored?.lastModified).toBe(source.lastModified);
+    expect(restored?.size).toBe(source.size);
   });
 });
