@@ -1,30 +1,32 @@
 # مصدر الفيديو المثبت لاختبارات المهمة الثالثة
 
-## الملف الذي يجب استخدامه
+## الملف المستخدم
 
-استخدم الملف الموجود في المستودع كما هو، دون قص أو إعادة ترميز أو استبدال:
+استخدمتُ الفيديو الحقيقي نفسه في اختبارات هذه الجولة:
 
-`deliverables/mission2/candidates/clip-1.webm`
+- **العنوان:** Raw Video: President Obama in Omaha
+- **المصدر وصفحة الملف:** [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Raw_Video-_President_Obama_in_Omaha.webm)
+- **الرابط المباشر:** https://upload.wikimedia.org/wikipedia/commons/e/ec/Raw_Video-_President_Obama_in_Omaha.webm
+- **المدة:** 325.291 ثانية (5:25)، ضمن شرط 5–10 دقائق
+- **الدقة:** 1280×720
+- **الفيديو:** VP8، 24000/1001 fps
+- **الصوت:** Vorbis، 44.1 kHz، قناتان
+- **اللغة:** الإنجليزية، بصوت بشري طبيعي مسجل فعليًا
+- **الحجم الذي فُحص محليًا:** 62,831,446 بايت
 
-بصمة SHA-256 للنسخة المعتمدة:
-
-`1c140ee98c92e0e591eb0c2d2d051f61de433d2a6eafe8ea844d79d1fac044c7`
-
-معلومات الملف وفق `ffprobe`: ‏23.649 ثانية؛ ‏1280×720؛ ‏24000/1001 fps؛ VP9 video وOpus stereo audio بمعدل 48 kHz؛ الحجم 2,552,904 بايت.
-
-## إثبات المصدر
-
-هذا المقطع مقتطف من تسجيل «Raw Video: President Obama in Omaha»، الذي تصفه صفحة الملف في Wikimedia Commons بأنه لقاء في منزل Lisa Martin وأصدقائها وعائلتها في Omaha، بتاريخ 12 يناير 2016. تسجل الصفحة أن مصدره قناة/فيديو YouTube «Raw Video: President Obama in Omaha»، وأن المؤلف هو البيت الأبيض، وتحدد أن التسجيل عمل لموظف في المكتب التنفيذي للرئيس ضمن واجباته الرسمية، ولذلك يصنف كعمل للحكومة الأميركية في الملكية العامة. [1]
-
-تتطابق جمل الحديث الظاهرة في مراجعة المقطع المحلي مع التفريغ المنشور للفيديو الأصلي، بما فيها سؤال الرئيس عمّا يدور في أذهان الحاضرين، ورد «Keep on the environmental stuff»، وحديث ألاسكا وتغير المناخ. [2] هذا دليل على أن مادة المقطع مأخوذة من تسجيل واقعي منشور، لا فيديو مولد بالذكاء الاصطناعي.
+صفحة الملف في Wikimedia Commons تصف التسجيل بأنه فيديو حقيقي لمحادثة الرئيس باراك أوباما مع Lisa Martin وأصدقائها وعائلتها في Omaha. وتذكر أن المادة من أعمال موظف في المكتب التنفيذي للرئيس أُنجزت ضمن واجباته الرسمية، ولذلك تُعرض كعمل حكومي أمريكي في الملكية العامة. يجب الرجوع إلى صفحة الملف عند إعادة الاستخدام للتحقق من بيانات الترخيص الحالية.
 
 ## قاعدة إعادة الاستخدام
 
-استخدم هذا المسار والبصمة نفسيهما في التفريغ والترجمة والمعاينة والتصدير. قبل كل جولة، تحقق من تطابق SHA-256 أعلاه. إذا لم يطابق، أو تعذر الوصول إلى الملف، فتوقف ولا تستبدله بصمت. تغيير إعدادات التطبيق لا يجيز تغيير الملف المصدر.
+استُخدم هذا الملف الكامل نفسه في الرفع والتحليل. لا يجوز استبداله بتسجيل مولد أو صوت اصطناعي أو ملف ترجمة جاهز. لا تُستخدم ملفات SRT/VTT لإثبات نجاح Whisper؛ أي نص مقبول يجب أن ينتج من تشغيل Whisper داخل التطبيق على صوت هذا الفيديو.
 
-هذا التوثيق ينجز مرحلة تحديد مصدر الفيديو فقط. لم تُشغّل في هذه المرحلة اختبارات Whisper أو OPUS-MT أو تصدير إضافي.
+النسخة المحلية المؤقتة خارج Git في:
+
+`acceptance/task3/source/obama-human-test.webm`
+
+لا تُرفع الوسائط الكبيرة إلى المستودع. ويجب عند إعادة الاختبار إعادة فحص المدة والدقة والصوت قبل التشغيل.
 
 ## المراجع
 
-[1]: https://commons.wikimedia.org/wiki/File:Raw_Video-_President_Obama_in_Omaha.webm "Wikimedia Commons file page for Raw Video President Obama in Omaha"
-[2]: https://www.youtube.com/watch?v=nzbzSbfgQjg "The White House video Raw Video President Obama in Omaha"
+[1]: https://commons.wikimedia.org/wiki/File:Raw_Video-_President_Obama_in_Omaha.webm "Wikimedia Commons file page and public-domain metadata"
+[2]: https://upload.wikimedia.org/wikipedia/commons/e/ec/Raw_Video-_President_Obama_in_Omaha.webm "Direct Wikimedia Commons media file"

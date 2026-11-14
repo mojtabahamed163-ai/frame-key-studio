@@ -1,0 +1,5 @@
+# Real media stays local; commit only metadata and reports.
+*.webm
+*.mp4
+*.mov
+*.m4v
