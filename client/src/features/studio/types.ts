@@ -86,7 +86,15 @@ export type LogoPosition =
   | "top-right"
   | "bottom-left"
   | "bottom-right";
-export type FramingMode = "fill" | "full";
+export type FramingMode =
+  | "preserve"
+  | "vertical"
+  | "fit-background"
+  | "smart"
+  | "fill"
+  | "full";
+export type BackgroundStyle = "blurred" | "solid";
+export type ExportQuality = "high" | "balanced" | "smaller";
 export type OutputPlatform =
   | "generic"
   | "tiktok"
@@ -126,6 +134,8 @@ export interface StudioSettings extends BrandSettings {
   peakNormalize: boolean;
   smartFraming: boolean;
   framingMode: FramingMode;
+  backgroundStyle: BackgroundStyle;
+  exportQuality: ExportQuality;
   manualCropX: number;
   manualCropY: number;
   showCaptions: boolean;
@@ -187,7 +197,9 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   silenceThresholdSeconds: 1.2,
   peakNormalize: false,
   smartFraming: false,
-  framingMode: "fill",
+  framingMode: "vertical",
+  backgroundStyle: "blurred",
+  exportQuality: "balanced",
   manualCropX: 0.5,
   manualCropY: 0.5,
   showCaptions: true,

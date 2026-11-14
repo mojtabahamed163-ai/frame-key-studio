@@ -101,7 +101,8 @@ import type {
   OutputFormat,
 } from "@/features/studio/export/convert-clip";
 import {
-  effectivePortraitHeight,
+  normalizedFramingMode,
+  outputDimensions,
   portraitCropQuality,
   requestSaveTarget,
   supportedOutputFormat,
@@ -236,12 +237,30 @@ function estimateOutputBytes(
   clips: ClipSuggestion[],
   settings: StudioSettings
 ): number {
-  const bitrate = videoBitrateForHeight(settings.outputHeight) + 128_000;
+  const bitrate =
+    videoBitrateForHeight(settings.outputHeight, settings.exportQuality) +
+    (settings.exportQuality === "high"
+      ? 160_000
+      : settings.exportQuality === "smaller"
+        ? 96_000
+        : 128_000);
   return clips.reduce(
     (sum, clip) =>
       sum + (Math.max(0, clip.end - clip.start) * bitrate) / 8 + 2_500_000,
     0
   );
+}
+
+function normalizeStudioSettings(
+  settings: Partial<StudioSettings>
+): StudioSettings {
+  const merged = { ...DEFAULT_SETTINGS, ...settings };
+  return {
+    ...merged,
+    framingMode: normalizedFramingMode(merged.framingMode),
+    backgroundStyle: merged.backgroundStyle ?? "blurred",
+    exportQuality: merged.exportQuality ?? "balanced",
+  };
 }
 
 function clipTitle(clip: ClipSuggestion, index: number): string {
@@ -398,11 +417,12 @@ export default function Studio() {
     ? portraitCropQuality(project.width, project.height, settings.outputHeight)
     : null;
   const effectiveHeight = project
-    ? effectivePortraitHeight(
+    ? outputDimensions(
         project.width,
         project.height,
-        settings.outputHeight
-      )
+        settings.outputHeight,
+        settings.framingMode
+      ).height
     : settings.outputHeight;
   const hasSavePicker =
     typeof getPickerWindow().showSaveFilePicker === "function";
@@ -413,7 +433,7 @@ export default function Studio() {
     Promise.all([loadSettings(), listProjects()])
       .then(([loadedSettings, projects]) => {
         if (!alive) return;
-        setSettings(loadedSettings);
+        setSettings(normalizeStudioSettings(loadedSettings));
         setSavedProjects(projects);
         setLocalStorageReady(true);
         setSaveState("saved");
@@ -466,7 +486,19 @@ export default function Studio() {
 
   useEffect(() => {
     let alive = true;
-    void supportedOutputFormat(settings.outputHeight)
+    const dimensions = project
+      ? outputDimensions(
+          project.width,
+          project.height,
+          settings.outputHeight,
+          settings.framingMode
+        )
+      : null;
+    void supportedOutputFormat(
+      dimensions?.height ?? settings.outputHeight,
+      settings.exportQuality,
+      dimensions?.width
+    )
       .then(format => {
         if (alive) setOutputFormat(format);
       })
@@ -476,7 +508,13 @@ export default function Studio() {
     return () => {
       alive = false;
     };
-  }, [settings.outputHeight]);
+  }, [
+    project?.width,
+    project?.height,
+    settings.outputHeight,
+    settings.exportQuality,
+    settings.framingMode,
+  ]);
 
   useEffect(
     () => () => {
@@ -1292,13 +1330,13 @@ export default function Studio() {
       invalidateClipOutputs([activeClip.id]);
       commitProject({
         ...project,
-        settings: { ...project.settings, smartFraming: true },
+        settings: { ...project.settings, smartFraming: true, framingMode: "smart" },
         faceKeyframesByClip: {
           ...project.faceKeyframesByClip,
           [activeClip.id]: keyframes,
         },
       });
-      setSettings({ ...settings, smartFraming: true });
+      setSettings({ ...settings, smartFraming: true, framingMode: "smart" });
       setNotice(
         summary.detectedCount < summary.sampleCount
           ? `Face detection returned at ${summary.detectedCount}/${summary.sampleCount} sampled times; held ${summary.heldCount} and used manual framing at ${summary.manualCount}. Longest detection gap: ${summary.longestDetectionGapSeconds.toFixed(1)} s. Review the crop—the tracker does not identify who is speaking.`
@@ -2724,7 +2762,7 @@ export default function Studio() {
                       className={`studio-button studio-button--small${settings.smartFraming ? " studio-button--copper" : " studio-button--secondary"}`}
                       onClick={() =>
                         settings.smartFraming
-                          ? changeSettings({ smartFraming: false })
+                          ? changeSettings({ smartFraming: false, framingMode: "vertical" })
                           : void runFaceTracking()
                       }
                       disabled={!activeClip || isTrackingFace}
@@ -2776,7 +2814,7 @@ export default function Studio() {
                       </p>
                     )}
                   <label className="studio-field">
-                    Portrait framing mode
+                    Output framing mode
                     <select
                       value={settings.framingMode}
                       onChange={event =>
@@ -2786,19 +2824,37 @@ export default function Studio() {
                         })
                       }
                     >
-                      <option value="fill">
-                        Fill portrait frame · crop sides
-                      </option>
-                      <option value="full">
-                        Show full video · studio background
-                      </option>
+                      <option value="preserve">Preserve Original · no crop</option>
+                      <option value="vertical">Vertical 9:16 · crop sides</option>
+                      <option value="fit-background">Fit with Background · full frame</option>
+                      <option value="smart">Smart Framing · tracked subject</option>
                     </select>
                     <small>
-                      {settings.framingMode === "full"
-                        ? "Keeps the complete landscape frame visible without stretching, inside a dark 9:16 studio canvas; preview uses a softened video background."
-                        : "Fills 9:16 by cropping the sides. Use face tracking or the manual slider to keep the subject visible."}
+                      {settings.framingMode === "preserve"
+                        ? "Keeps the source orientation and every source pixel. Output dimensions match the source (even pixel rounding only)."
+                        : settings.framingMode === "fit-background"
+                          ? "Keeps the complete frame inside 9:16. Choose a derived blurred background or a solid color below."
+                          : settings.framingMode === "smart"
+                            ? "Uses the saved face track with smooth, bounded movement and manual fallback when a safe crop is unavailable."
+                            : "Outputs a true 9:16 crop without claiming to restore detail outside the source crop."}
                     </small>
                   </label>
+                  {(settings.framingMode === "fit-background" || settings.framingMode === "full") && (
+                    <label className="studio-field">
+                      Background
+                      <select
+                        value={settings.backgroundStyle}
+                        onChange={event =>
+                          changeSettings({
+                            backgroundStyle: event.target.value as StudioSettings["backgroundStyle"],
+                          })
+                        }
+                      >
+                        <option value="blurred">Blurred source-derived</option>
+                        <option value="solid">Solid dark color</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="studio-field studio-range-field">
                     Manual horizontal framing
                     <input
@@ -2816,6 +2872,24 @@ export default function Studio() {
                     <small>
                       Use this if automatic face framing is unavailable or
                       off-center.
+                    </small>
+                  </label>
+                  <label className="studio-field">
+                    Export quality
+                    <select
+                      value={settings.exportQuality}
+                      onChange={event =>
+                        changeSettings({
+                          exportQuality: event.target.value as StudioSettings["exportQuality"],
+                        })
+                      }
+                    >
+                      <option value="high">High Quality · 20/10 Mbps video · 160 kbps audio</option>
+                      <option value="balanced">Balanced · 12/6 Mbps video · 128 kbps audio</option>
+                      <option value="smaller">Smaller File · 8/4 Mbps video · 96 kbps audio</option>
+                    </select>
+                    <small>
+                      Bitrate changes are applied to the encoder; the estimate below is based on the selected profile and clip duration.
                     </small>
                   </label>
                   <label className="studio-field">
@@ -3009,10 +3083,21 @@ export default function Studio() {
                       </select>
                     </label>
                     <div>
-                      <span>9:16 OUTPUT</span>
+                      <span>
+                        {normalizedFramingMode(settings.framingMode) === "preserve"
+                          ? "ORIGINAL OUTPUT"
+                          : "9:16 OUTPUT"}
+                      </span>
                       <strong>
-                        {Math.round((effectiveHeight * 9) / 16)} ×{" "}
-                        {effectiveHeight} · 30 fps
+                        {project
+                          ? outputDimensions(
+                              project.width,
+                              project.height,
+                              settings.outputHeight,
+                              settings.framingMode
+                            ).width
+                          : Math.round((effectiveHeight * 9) / 16)}{" "}
+                        × {effectiveHeight} · 30 fps
                       </strong>
                     </div>
                     <div>
@@ -3031,9 +3116,9 @@ export default function Studio() {
                     </div>
                   </div>
                   <p className="studio-profile-note">
-                    Targets share one vertical encoding profile; the target
-                    label is added to the filename, not a guarantee of platform
-                    approval. Confirm current upload rules before posting.
+                    {normalizedFramingMode(settings.framingMode) === "preserve"
+                      ? "Preserve Original keeps the source orientation and does not crop. Even-pixel rounding may occur for codec compatibility."
+                      : "The selected framing and quality profile are encoded into the file; 9:16 output cannot restore detail removed by a crop."}
                   </p>
                   {project.clips.length > 0 && (
                     <div className="studio-export-buttons">

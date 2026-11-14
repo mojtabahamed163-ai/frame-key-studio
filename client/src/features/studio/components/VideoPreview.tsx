@@ -36,9 +36,16 @@ export function VideoPreview({
   const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
   const [videoSize, setVideoSize] = useState({ src: "", width: 0, height: 0 });
   const localTime = clip ? Math.max(0, currentTime - clip.start) : 0;
+  const framingMode =
+    settings.framingMode === "fill"
+      ? "vertical"
+      : settings.framingMode === "full"
+        ? "fit-background"
+        : settings.framingMode;
+  const useSmartFraming = framingMode === "smart" || settings.smartFraming;
   const center = useMemo(
     () =>
-      settings.smartFraming
+      useSmartFraming
         ? faceCenterAt(
             faceKeyframes,
             localTime,
@@ -47,7 +54,7 @@ export function VideoPreview({
           )
         : { x: settings.manualCropX, y: settings.manualCropY },
     [
-      settings.smartFraming,
+      useSmartFraming,
       settings.manualCropX,
       settings.manualCropY,
       faceKeyframes,
@@ -84,7 +91,7 @@ export function VideoPreview({
   }
   const captionPosition = resolveCaptionPosition({
     preferred: settings.captionPosition,
-    faceCenter: settings.smartFraming ? center : null,
+    faceCenter: useSmartFraming ? center : null,
     previousPosition: previousCaptionPosition.current,
   });
   previousCaptionPosition.current = captionPosition;
@@ -106,10 +113,10 @@ export function VideoPreview({
 
   useEffect(() => {
     const background = backgroundVideoRef.current;
-    if (!background || settings.framingMode !== "full") return;
+    if (!background || framingMode !== "fit-background") return;
     if (Math.abs(background.currentTime - currentTime) > 0.08)
       background.currentTime = currentTime;
-  }, [backgroundVideoRef, currentTime, settings.framingMode]);
+  }, [backgroundVideoRef, currentTime, framingMode]);
 
   useEffect(() => {
     if (!settings.logo) {
@@ -127,10 +134,10 @@ export function VideoPreview({
         <span>
           <span className="studio-live-dot" /> LOCAL PREVIEW
         </span>
-        <span>9:16 / PORTRAIT</span>
+        <span>{framingMode === "preserve" ? "ORIGINAL FRAME" : "9:16 / PORTRAIT"}</span>
       </div>
       <div className="studio-preview-frame">
-        {settings.framingMode === "full" && (
+        {framingMode === "fit-background" && (
           <video
             ref={backgroundVideoRef}
             className="studio-preview-background"
@@ -169,9 +176,11 @@ export function VideoPreview({
             if (clip) video.currentTime = clip.start;
           }}
           style={
-            settings.framingMode === "full"
-              ? undefined
-              : {
+            framingMode === "preserve"
+              ? { objectFit: "contain", objectPosition: "50% 50%" }
+              : framingMode === "fit-background"
+                ? { objectFit: "contain" }
+                : {
                   objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%`,
                 }
           }
@@ -257,7 +266,9 @@ export function VideoPreview({
             : "Waiting for a clip"}
         </span>
         <span>
-          {center.x < 0.48
+          {framingMode === "preserve"
+            ? "ORIGINAL FRAME"
+            : center.x < 0.48
             ? "FRAME LEFT"
             : center.x > 0.52
               ? "FRAME RIGHT"

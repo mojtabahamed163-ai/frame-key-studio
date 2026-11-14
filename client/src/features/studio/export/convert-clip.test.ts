@@ -3,6 +3,8 @@ import {
   CAPTION_BACKGROUND,
   cropForPortrait,
   effectivePortraitHeight,
+  normalizedFramingMode,
+  outputDimensions,
   portraitCropQuality,
   videoBitrateForHeight,
 } from "./convert-clip";
@@ -17,6 +19,33 @@ describe("video bitrate profile", () => {
   it("uses more headroom for both supported portrait output sizes", () => {
     expect(videoBitrateForHeight(1280)).toBe(6_000_000);
     expect(videoBitrateForHeight(1920)).toBe(12_000_000);
+    expect(videoBitrateForHeight(1920, "high")).toBe(20_000_000);
+    expect(videoBitrateForHeight(1920, "smaller")).toBe(8_000_000);
+  });
+});
+
+describe("output framing modes", () => {
+  it("preserves the original orientation and dimensions without a crop", () => {
+    expect(outputDimensions(1920, 1080, 1920, "preserve")).toEqual({
+      width: 1920,
+      height: 1080,
+    });
+  });
+
+  it("uses a source-limited 9:16 canvas for vertical and fit modes", () => {
+    expect(outputDimensions(1920, 1080, 1920, "vertical")).toEqual({
+      width: 608,
+      height: 1080,
+    });
+    expect(outputDimensions(1920, 1080, 1920, "fit-background")).toEqual({
+      width: 608,
+      height: 1080,
+    });
+  });
+
+  it("maps legacy framing values to the new explicit names", () => {
+    expect(normalizedFramingMode("fill")).toBe("vertical");
+    expect(normalizedFramingMode("full")).toBe("fit-background");
   });
 });
 

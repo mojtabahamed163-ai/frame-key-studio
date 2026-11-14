@@ -71,8 +71,25 @@ export interface ExportResult {
   streamed: boolean;
 }
 
-export function videoBitrateForHeight(height: number): number {
-  return height === 1920 ? 12_000_000 : 6_000_000;
+export function videoBitrateForHeight(
+  height: number,
+  quality: "high" | "balanced" | "smaller" = "balanced"
+): number {
+  if (quality === "high") return height >= 1920 ? 20_000_000 : 10_000_000;
+  if (quality === "smaller") return height >= 1920 ? 8_000_000 : 4_000_000;
+  return height >= 1920 ? 12_000_000 : 6_000_000;
+}
+
+export function normalizedFramingMode(mode: string | undefined):
+  | "preserve"
+  | "vertical"
+  | "fit-background"
+  | "smart" {
+  if (mode === "fill") return "vertical";
+  if (mode === "full") return "fit-background";
+  if (mode === "preserve" || mode === "fit-background" || mode === "smart")
+    return mode;
+  return "vertical";
 }
 
 /** Never manufacture detail by encoding a canvas taller than the source. */
@@ -92,19 +109,37 @@ export function effectivePortraitHeight(
   return Math.max(2, Math.min(requestedHeight, sourcePortraitHeight));
 }
 
+export function outputDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+  requestedHeight: number,
+  mode: string | undefined
+): { width: number; height: number } {
+  if (normalizedFramingMode(mode) === "preserve") {
+    return {
+      width: Math.max(2, Math.floor(sourceWidth / 2) * 2),
+      height: Math.max(2, Math.floor(sourceHeight / 2) * 2),
+    };
+  }
+  const height = effectivePortraitHeight(sourceWidth, sourceHeight, requestedHeight);
+  return { width: Math.max(2, Math.round((height * 9) / 16)), height };
+}
+
 export async function supportedOutputFormat(
-  height: number
+  height: number,
+  quality: "high" | "balanced" | "smaller" = "balanced",
+  width?: number
 ): Promise<OutputFormat | null> {
   if (!("VideoEncoder" in globalThis) || !("AudioEncoder" in globalThis))
     return null;
-  const width = Math.round((height * 9) / 16);
+  const outputWidth = width ?? Math.round((height * 9) / 16);
   const videoSupported = async (codec: string) => {
     try {
       const result = await VideoEncoder.isConfigSupported({
         codec,
-        width,
+        width: outputWidth,
         height,
-        bitrate: videoBitrateForHeight(height),
+        bitrate: videoBitrateForHeight(height, quality),
         framerate: 30,
       });
       return Boolean(result.supported);
@@ -510,14 +545,27 @@ export async function exportClip(options: {
   const duration = clip.end - clip.start;
   if (duration <= 0 || duration > 180)
     throw new Error("Choose a clip between 1 second and 3 minutes.");
-  const height = effectivePortraitHeight(
+  const framingMode = normalizedFramingMode(project.settings.framingMode);
+  const dimensions = outputDimensions(
     project.width,
     project.height,
-    project.settings.outputHeight
+    project.settings.outputHeight,
+    framingMode
   );
-  const width = Math.round((height * 9) / 16);
+  const width = dimensions.width;
+  const height = dimensions.height;
+  const videoBitrate = videoBitrateForHeight(
+    height,
+    project.settings.exportQuality
+  );
+  const audioBitrate =
+    project.settings.exportQuality === "high"
+      ? 160_000
+      : project.settings.exportQuality === "smaller"
+        ? 96_000
+        : 128_000;
   const estimatedBytes =
-    (duration * (videoBitrateForHeight(height) + 128_000)) / 8 + 4_000_000;
+    (duration * (videoBitrate + audioBitrate)) / 8 + 4_000_000;
   if (!writable && estimatedBytes > 84 * 1024 * 1024)
     throw new Error(
       "This browser cannot stream directly to a file. Use 720p, shorten the clip, or export it on a browser that supports direct file saving."
@@ -615,7 +663,7 @@ export async function exportClip(options: {
       trim: { start: clip.start, end: clip.end },
       video: {
         codec: format === "mp4" ? "avc" : format === "webm-vp8" ? "vp8" : "vp9",
-        quality: new Quality({ bitrate: videoBitrateForHeight(height) }),
+        quality: new Quality({ bitrate: videoBitrate }),
         frameRate: 30,
         processedWidth: width,
         processedHeight: height,
@@ -625,7 +673,8 @@ export async function exportClip(options: {
           const localTime = Math.max(0, sample.timestamp - firstVideoTime);
           const mappedTime = mapSourceTimeToOutput(localTime, ranges);
           if (mappedTime == null) return null;
-          const center = project.settings.smartFraming
+          const useSmartFraming = framingMode === "smart" || project.settings.smartFraming;
+          const center = useSmartFraming
             ? faceCenterAt(
                 faceKeyframes,
                 localTime,
@@ -637,9 +686,18 @@ export async function exportClip(options: {
                 y: project.settings.manualCropY,
               };
           context.clearRect(0, 0, width, height);
-          if (project.settings.framingMode === "full") {
-            context.fillStyle = "#17261f";
+          if (framingMode === "preserve") {
+            sample.drawWithFit(context, { fit: "fill" });
+          } else if (framingMode === "fit-background") {
+            context.fillStyle =
+              project.settings.backgroundStyle === "solid" ? "#17261f" : "#000";
             context.fillRect(0, 0, width, height);
+            if (project.settings.backgroundStyle === "blurred") {
+              context.save();
+              context.filter = "blur(24px) brightness(0.58)";
+              sample.drawWithFit(context, { fit: "cover" });
+              context.restore();
+            }
             fullVideoContext.clearRect(
               0,
               0,
@@ -683,7 +741,7 @@ export async function exportClip(options: {
             );
             const captionPosition = resolveCaptionPosition({
               preferred: project.settings.captionPosition,
-              faceCenter: project.settings.smartFraming ? center : null,
+              faceCenter: useSmartFraming ? center : null,
               previousPosition: stableCaptionPosition,
             });
             stableCaptionPosition = captionPosition;
@@ -707,7 +765,7 @@ export async function exportClip(options: {
       },
       audio: {
         codec: format === "mp4" ? "aac" : "opus",
-        quality: new Quality({ bitrate: 128_000 }),
+        quality: new Quality({ bitrate: audioBitrate }),
         process: sample => {
           if (signal.aborted) return null;
           if (firstAudioTime == null) firstAudioTime = sample.timestamp;
