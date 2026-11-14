@@ -55,5 +55,6 @@
 
 ## Git
 
-**Commit:** `4349e215767a4f783f2268709545bc3b20b6eb73`  
-**Remote:** `origin/main` مطابق للـcommit المحلي بعد الدفع.
+**Commit الميزة:** `4349e215767a4f783f2268709545bc3b20b6eb73`  
+**Commit التسليم النهائي:** `903774ecab6c4ec1777c720b42c7e2a5d057e941`  
+**Remote:** `origin/main` مطابق للـcommit المحلي بعد الدفع، ويشمل الكود والتقرير.
