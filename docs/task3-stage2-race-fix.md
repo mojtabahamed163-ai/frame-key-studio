@@ -2,29 +2,27 @@
 
 Date: 2026-11-14
 
-## Root cause
+## Root causes
 
-The existing full-caption snapshot guard correctly rejected results whose source cue ids, text, timing, or word timing no longer matched. A second race remained in the controller lifecycle: changing the target language or display workflow could abort an in-flight translation, while the old promise's `finally` block still unconditionally cleared the shared `translationController` and `isTranslating` state. If a new translation started before the old promise settled, the old cleanup could make the new job appear inactive and allow confusing intermediate preview state. The auto-translation path also did not share the controller reference, so changing the caption workflow could not reliably invalidate that job.
+Two asynchronous races could make caption results appear inconsistent.
 
-## Fix
+1. A full-caption translation could be aborted when the user changed its target language or caption workflow. The old promise could then settle after a replacement job had started. Its unconditional `finally` cleanup could clear the shared controller/progress state owned by the newer run. The earlier run-identity guard addressed this cleanup race, and both full-recording and selected-clip translation now use active controller ownership plus source-snapshot validation before merging.
+2. A further race remained before that guard became active. `runTranscription` captured the mode and target language before awaiting Whisper. While Whisper was still processing, a user could change Arabic to French, or switch back to transcription-only. At that point no translation controller had been registered yet, so the change could not cancel the pending plan. After Whisper completed, the stale closure could translate into the old language and save it under that language. The current preview selected the newly chosen language and therefore showed no translation, even though the old result existed. Switching to transcription-only could also start an unnecessary stale translation after the transcript completed.
 
-The following changes were made:
+## Fixes
 
-- Added `translationRunId` in `client/src/pages/Studio.tsx`.
-- Changing `targetLanguage` or `captionProcessingMode` now increments the run id and aborts the previous translation controller without clearing saved source or translated tracks.
-- Both full-recording auto-translation and selected-clip translation register their controller and capture a run id.
-- A result is merged only when its run id, controller signal, source snapshot, and active analysis controller are all still current.
-- Each `finally` block clears progress only when it still owns the active controller; an older promise cannot clear a newer run.
-- Added `client/src/features/studio/analysis/caption-job.ts` and `caption-job.test.ts` to make the active-run rule independently testable.
+- Added a synchronous `settingsRef` updated by settings changes and saved-project restoration. The asynchronous Whisper continuation now reads the latest caption mode, target language, and source language after transcription completes.
+- Added `getAutoTranslationTarget`; it returns only an eligible current target. It prevents stale translation after switching to transcription-only or no target, and prevents OPUS-MT from running for an unsupported non-English source.
+- Kept source transcription results even if translation is cancelled or fails. Existing run-id, AbortController-identity, and full source-caption-snapshot checks still reject outdated or mismatched translation results.
+- Kept mode selection as a derived view of saved source and translated tracks; changing the view does not clear either saved track. Dual mode matches translated cues to source cues by the source cue ID embedded in the translated cue ID.
 
-The earlier full source-snapshot validation remains in place. Display-mode selection still derives preview/export cues from the saved source and translated tracks; it does not mutate or erase those tracks.
+The implementation is in `client/src/pages/Studio.tsx` and `client/src/features/studio/analysis/caption-job.ts`. Regression tests are in `client/src/features/studio/analysis/caption-job.test.ts`.
 
-## Regression evidence
-
-The focused and full test command completed successfully after the change:
+## Regression checks
 
 - `pnpm check` — PASS.
-- `pnpm test -- --run` — PASS: 19 files, 128 tests.
+- `pnpm exec vitest run client/src/features/studio/analysis/caption-job.test.ts` — PASS: 7 tests.
+- `pnpm exec vitest run` — PASS: 19 test files, 132 tests.
 - `git diff --check` — PASS.
 
-The browser acceptance run uploaded the same real 5:25 source used by this task and started Whisper in the local worker. The long-source browser run did not produce a usable transcript in this sandbox session; therefore no successful Whisper or translation result is claimed from that attempt. Prior successful real-media evidence remains historical and is not used to claim that this new controller fix has been browser-accepted.
+The new tests cover latest-target selection after transcription, switching to transcription-only, removing the target, unsupported source language, and active-run ownership. These code-level checks do not replace the full-video Whisper/OPUS-MT and repeated browser-mode acceptance tests, which are recorded in later task stages.

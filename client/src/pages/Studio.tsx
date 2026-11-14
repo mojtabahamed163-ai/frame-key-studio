@@ -41,7 +41,10 @@ import {
 } from "@/features/studio/analysis/clip-analysis";
 import { selectCaptionCuesForMode } from "@/features/studio/analysis/caption-tracks";
 import { sameCaptionSnapshot } from "@/features/studio/analysis/caption-snapshot";
-import { isCurrentCaptionRun } from "@/features/studio/analysis/caption-job";
+import {
+  getAutoTranslationTarget,
+  isCurrentCaptionRun,
+} from "@/features/studio/analysis/caption-job";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import {
   exportSrt,
@@ -265,6 +268,7 @@ export default function Studio() {
   const sourceSaveInProgress = useRef(false);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
+  const settingsRef = useRef(settings);
   const [step, setStep] = useState<StepId>("upload");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -551,6 +555,7 @@ export default function Studio() {
       translationController.current?.abort();
     }
     invalidateClipOutputs();
+    settingsRef.current = next;
     setSettings(next);
     if (project) commitProject({ ...project, settings: next });
   }
@@ -588,6 +593,7 @@ export default function Studio() {
       setSourceFile(file);
       setMetadata(info);
       setProject(merged);
+      settingsRef.current = merged.settings;
       setSettings(merged.settings);
       setStep(merged.step);
       setCurrentTime(
@@ -758,10 +764,11 @@ export default function Studio() {
   async function runTranscription() {
     if (!sourceFile || !project) return;
     const projectId = project.id;
+    const initialSettings = settingsRef.current;
     const autoTranslate =
-      settings.captionProcessingMode !== "transcribe-only";
-    const targetLanguage = settings.targetLanguage;
-    if (autoTranslate && targetLanguage === "none") {
+      initialSettings.captionProcessingMode !== "transcribe-only";
+    const initialTargetLanguage = initialSettings.targetLanguage;
+    if (autoTranslate && initialTargetLanguage === "none") {
       setError("Choose one target language before starting translation.");
       return;
     }
@@ -826,7 +833,12 @@ export default function Studio() {
           : `The words were transcribed, but no short self-contained segments were found. The full timed transcript is ready for review; add a manual clip if you want to edit it.${warningNotice}`
       );
       setStep("select");
-      if (autoTranslate && targetLanguage !== "none") {
+      const targetLanguage = getAutoTranslationTarget(
+        settingsRef.current.captionProcessingMode,
+        settingsRef.current.targetLanguage,
+        project.sourceLanguage,
+      );
+      if (targetLanguage) {
         setIsTranslating(true);
         setTranslationProgress({
           stage: "model",
