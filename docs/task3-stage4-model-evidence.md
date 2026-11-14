@@ -1,25 +1,33 @@
-# Task 3 — Stage 4 evidence: real Whisper and translation-model checks
+# دليل المرحلة الرابعة — اختبارات Whisper والترجمة الفعلية
 
-Date: 2026-11-14
+تاريخ التنفيذ: 14 نوفمبر 2026، توقيت +02:00.
 
-## Real source and Whisper
+## مصدر الاختبار
 
-The full pinned source is the 5:25, 1280×720 Wikimedia Commons recording documented in `docs/task3-test-video-source.md`. It was uploaded to the Studio UI and selected with English speech. A full-source run in this browser session reached the local worker path but was too slow to produce a stable saved result in the available run window.
+استُخدم ملف `Raw Video: President Obama in Omaha` نفسه، الموثق مع رابط Wikimedia Commons ومعلومات الملكية العامة في [`docs/task3-test-video-source.md`](task3-test-video-source.md). الملف الذي رفعته الواجهة هو فيديو WebM بشري حقيقي مدته 5:25، ودقته 1280×720، يحوي حوارًا إنجليزيًا طبيعيًا. لم يُستخدم ملف SRT/VTT جاهز، ولم يُستبدل صوت الفيديو بتفريغ خارجي أو مادة مولدة.
 
-To diagnose the worker without replacing the source, a 35.035-second WebM excerpt was created from the same source recording at approximately 00:70. It was uploaded through the Studio UI, with no SRT/VTT input. Whisper Base English ran in the browser and produced a saved timed transcript of **88 words**. The UI surfaced the actual warnings about tail recovery, overlapping windows, and an implausibly long timestamp instead of presenting the text as guaranteed verbatim speech.
+## Whisper على كامل الفيديو
 
-During the first run, the progress bar reached 100% while the final tail-recovery recognition promise was still pending. The code now bounds every worker recognition call with a two-minute timeout, cleans up its message and abort listeners, and rejects with an actionable retry/manual-clip message. This prevents an indefinitely pending analysis state and always lets the outer `finally` terminate the worker.
+شُغّل نموذج `Xenova/whisper-base.en` محليًا داخل المتصفح على الصوت المستخرج من الملف الكامل. اكتمل التحليل وحُفظ محليًا في مشروع التطبيق. أظهرت واجهة الاستوديو **833 كلمة مؤقتة موزعة على 143 سطرًا مؤقت التوقيت**، وثلاثة اقتراحات للمقاطع. النص الكامل قابل للمراجعة من ملخص التفريغ في واجهة المشروع.
 
-## OPUS-MT evidence
+ظهرت تحذيرات Whisper الفعلية للمستخدم: قيم توقيت خارج نافذة الصوت فُرزت للمراجعة، أُعيد فحص الذيل الصوتي، استُبعد توقيت كلمة غير معقول الطول، ووجد اختلاف عند حد إحدى النوافذ المتداخلة. لذلك لا يُعامل النص على أنه تفريغ حرفي مضمون. شوهدت كذلك عبارات ضعيفة أو محتملة الخطأ في التعرف؛ يلزم الاستماع والمراجعة اليدوية قبل النشر أو التصدير النهائي.
 
-The application still uses the local Helsinki-NLP OPUS-MT models listed in the UI for English→Arabic, English→French, English→Spanish, and English→German. Existing historical acceptance records document actual runs on Whisper-derived text for all four target languages plus English-copy behavior. This stage does not claim that the still-running Arabic browser attempt completed; it will be recorded only if a non-empty model result is visibly saved.
+## تشغيل OPUS-MT ومسارات اللغات
 
-## Automated checks after the change
+أُجريت التجارب على النص الذي نتج من تشغيل Whisper نفسه:
 
-- `pnpm check` — PASS.
-- `pnpm test -- --run` — PASS: 19 files, 128 tests.
-- `pnpm build` — PASS; only the existing non-blocking script/chunk-size warnings remain.
-- `pnpm audit --prod` — PASS: no known vulnerabilities.
-- `git diff --check` — PASS.
+| الهدف | التنفيذ الفعلي | دليل الواجهة والنتيجة |
+|---|---|---|
+| العربية | تشغيل تلقائي لـOPUS-MT على التفريغ الكامل | أكدت الواجهة اكتمال الترجمة إلى `ar` لـ143 سطرًا مؤقت التوقيت. ظهرت الترجمة في معاينة المقطع وفي حقول السطور العربية. |
+| الفرنسية | تشغيل يدوي على المقطع 00:53.7–01:17.3 | أكدت الواجهة ترجمة 14 سطرًا محليًا؛ ظهرت عينة المعاينة `So what, Et alors ?`. |
+| الإسبانية | تشغيل يدوي على المقطع نفسه | أكدت الواجهة ترجمة 14 سطرًا محليًا؛ ظهرت `So what, ¿Y qué?`. |
+| الألمانية | تشغيل يدوي على المقطع نفسه | أكدت الواجهة ترجمة 14 سطرًا محليًا؛ ظهرت `So what, Na und?`. |
+| الإنجليزية | اختيار English وتشغيل مسار النسخ | أكدت الواجهة نسخ 14 سطرًا مع التوقيت؛ بقي النص `So what,` دون تشغيل نموذج English-to-English. |
 
-The source excerpt and generated media stay outside Git. Only the test metadata and report are committed.
+استخدم التطبيق نماذج Helsinki-NLP المحلية المبينة في الواجهة: `onnx-community/opus-mt-en-ar` و`opus-mt-en-fr` و`opus-mt-en-es` و`opus-mt-en-de`. عينة المصدر المشتركة كانت مقتطفًا من تفريغ Whisper الحقيقي، وليست نصًا مرجعيًا جاهزًا. شُغّل Whisper مرة واحدة على المصدر الكامل ثم اختُبرت الأهداف على مسارات الترجمة؛ لم تُكرر عملية رفع الملف وتفريغه خمس مرات منفصلة، ولذلك لا يُدّعى هنا وجود خمس عمليات Whisper مستقلة.
+
+## مراجعة لغوية أولية وحدود الإثبات
+
+أظهر عرض اللغات عمل النماذج، لكنه **لا يثبت جودة ترجمة احترافية**. بعض العبارات القصيرة الأولى معقولة في الفرنسية والإسبانية والألمانية (`Et alors ?`، `¿Y qué?`، `Na und?`). في العربية أُخرجت عبارة أولى غير مكتملة نسبيًا، `لذا ما الذي` مقابل `So what,`، كما أظهرت أسطر متقطعة ناتجة من تقسيم الكلام، منها `الحق اليمين.` مقابل `Right.` و`ما يحدث هو يحدث.` مقابل `what's happening.`. كما بدا مقطع الإنجليزية نفسه ناقصًا في مواضع، مثل بدء السطر بـ`know, the economy...`، ما يرجح مساهمة أخطاء Whisper وتقسيم العبارات إلى جانب حدود النموذج. يجب مراجعة كل نص بشريًا؛ ولا توجد محاذاة كلمة بكلمة، بل توقيتات على مستوى العبارة.
+
+هذه أدلة تشغيل النماذج والمعاينة فقط. لم يُصدّر بعد في هذه الجولة ملف WebM نهائي لكل لغة، ولم تُقبل جودة الترجمة لغويًا قبولًا نهائيًا؛ فحص التصدير والإطارات ومراجعة بقية العينات لكل لغة ما زال مطلوبًا في مرحلة المراجعة العملية قبل التسليم.
