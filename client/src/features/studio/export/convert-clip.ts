@@ -263,23 +263,33 @@ function drawCaption(
     24,
     Math.round(height * (style === "bold" ? 0.027 : 0.024))
   );
-  ctx.font = `${style === "bold" ? 800 : 650} ${fontSize}px ${fontFamily}`;
+  ctx.font = `${style === "bold" ? 800 : 650} ${fontSize}px ${fontFamily}, Arial, Tahoma, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const maxWidth = ctx.canvas.width * 0.82;
-  const lines: string[] = [];
-  for (const paragraph of cue.text.split(/\r?\n/)) {
+  const lines: Array<{ text: string; words: string[]; arabic: boolean }> = [];
+  const paragraphs = cue.text.split(/\r?\n/);
+  paragraphs.forEach((paragraph, paragraphIndex) => {
     const tokens = paragraph.split(/\s+/).filter(Boolean);
     let line = "";
     for (const token of tokens) {
       const next = line ? `${line} ${token}` : token;
       if (line && ctx.measureText(next).width > maxWidth) {
-        lines.push(line);
+        lines.push({
+          text: line,
+          words: paragraphIndex === 0 ? line.split(/\s+/).filter(Boolean) : [],
+          arabic: ARABIC_TEXT.test(line),
+        });
         line = token;
       } else line = next;
     }
-    if (line) lines.push(line);
-  }
+    if (line)
+      lines.push({
+        text: line,
+        words: paragraphIndex === 0 ? line.split(/\s+/).filter(Boolean) : [],
+        arabic: ARABIC_TEXT.test(line),
+      });
+  });
   const visibleLines = lines.slice(0, 4);
   const lineHeight = fontSize * 1.22;
   const blockHeight = visibleLines.length * lineHeight;
@@ -305,15 +315,16 @@ function drawCaption(
   ctx.shadowColor = `${strokeColor}CC`;
   ctx.shadowBlur = Math.max(2, fontSize * 0.12);
   ctx.shadowOffsetY = Math.max(1, fontSize * 0.035);
-  visibleLines.forEach((lineText, lineIndex) => {
-    const arabic = ARABIC_TEXT.test(lineText);
+  visibleLines.forEach((line, lineIndex) => {
+    const lineText = line.text;
+    const arabic = line.arabic;
     ctx.direction = arabic ? "rtl" : "ltr";
-    const lineWords = lineText.split(/\s+/).filter(Boolean);
+    const lineWords = line.words;
     const widths = lineWords.map(word => ctx.measureText(`${word} `).width);
     const totalWidth = widths.reduce((a, b) => a + b, 0);
     let cursor = (ctx.canvas.width - totalWidth) / 2;
     const baseline = y + fontSize * 0.5 + lineIndex * lineHeight;
-    if (arabic || !cue.words.length || lineIndex > 0) {
+    if (arabic || !lineWords.length || !cue.words.length) {
       ctx.fillStyle = textColor;
       ctx.strokeText(lineText, ctx.canvas.width / 2, baseline, maxWidth);
       ctx.fillText(lineText, ctx.canvas.width / 2, baseline, maxWidth);

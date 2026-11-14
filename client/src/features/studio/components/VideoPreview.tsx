@@ -243,7 +243,6 @@ export function VideoPreview({
           >
             {activeCue.text.split(/\r?\n/).map((line, lineIndex) => {
               const arabic = /[\u0600-\u06FF]/.test(line);
-              const sourceLine = lineIndex === 0;
               return (
                 <span
                   key={`${activeCue.id}-line-${lineIndex}`}
@@ -254,7 +253,7 @@ export function VideoPreview({
                   }
                   dir={arabic ? "rtl" : "ltr"}
                 >
-                  {sourceLine && activeCue.words.length
+                  {!arabic && activeCue.words.length
                     ? activeCue.words.map(word => (
                         <span
                           key={word.id}
