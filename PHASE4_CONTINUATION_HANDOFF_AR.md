@@ -50,7 +50,7 @@
 - `client/src/features/studio/analysis/caption-tracks.ts`
 - `client/src/features/studio/analysis/caption-tracks.test.ts`
 - هذا التقرير `PHASE4_CONTINUATION_HANDOFF_AR.md`
-- أدلة QA الموثقة في `qa-artifacts/phase4/` (WebM، إطاران، SRT اصطناعي، وREADME بالقيود)
+- أدلة QA السابقة في `qa-artifacts/phase4/` (WebM، إطاران، SRT اصطناعي، وREADME بالقيود) أُزيلت من المستودع وحزمة التسليم في مهمة معالجة التراخيص؛ توجد نسخة اختبارية خارج المستودع فقط.
 
 العينة الخام نفسها غير مكررة داخل مجلد QA؛ مصدرها موجود مسبقًا في `deliverables/mission2/candidates/clip-1.webm`. أُضيف ملف التصدير وإطارات الإثبات ومدخل SRT الاصطناعي لإبقاء نتيجة الاختبار قابلة للمراجعة. يوضح README أن هذه المواد لا تثبت دقة التفريغ أو الترجمة.
 

@@ -168,8 +168,11 @@
 - `@img/sharp-libvips-linux-arm64` — 1.3.4
 - `@img/sharp-libvips-linuxmusl-arm64` — 1.3.4
 
-## MIT (561)
+## MIT (564; includes three packages whose upstream package pages identify MIT despite missing package.json license metadata)
 
+- `@builder.io/jsx-loc-internals` — 0.0.1 (dev; npm package README identifies MIT)
+- `@builder.io/vite-plugin-jsx-loc` — 0.1.1 (dev; npm package README identifies MIT)
+- `khroma` — 2.1.0 (production transitive via `streamdown` → `mermaid`; upstream v2.1.0 `license` file is MIT)
 - `@antfu/install-pkg` — 1.1.0
 - `@antfu/utils` — 9.3.0
 - `@babel/code-frame` — 7.27.1
@@ -743,12 +746,6 @@
 - `lightningcss-linux-arm64-musl` — 1.30.1
 - `mediabunny` — 1.61.4
 
-## Unknown (3)
-
-- `@builder.io/jsx-loc-internals` — 0.0.1
-- `@builder.io/vite-plugin-jsx-loc` — 0.1.1
-- `khroma` — 2.1.0
-
 ## Unlicense (2)
 
 - `robust-predicates` — 3.0.2
@@ -757,6 +754,6 @@
 ## ملاحظات تدقيق
 
 - جرد الرخصة يصف بيانات الحزم المثبتة، وليس إقرارًا بأن للمشروع حقوقًا أوسع من رخصة كل حزمة.
-- الحزم تحت `Unknown` هي `@builder.io/jsx-loc-internals`, `@builder.io/vite-plugin-jsx-loc`, و`khroma`، وكلها في مسارات بناء/عرض بحسب الشجرة الحالية. يجب حسمها قبل شحن بيئة البناء.
+- أظهرت بيانات `pnpm licenses` القديمة هذه الحزم الثلاث كـ`Unknown` لأن بعض package.json لم يضع حقل license. حُسمت الآن إلى MIT من صفحات npm الرسمية لـBuilder وملف upstream المثبت للإصدار 2.1.0 من khroma، ووُثقت الأدلة في `THIRD_PARTY_NOTICES.md`.
 - وجود LGPL لـ`@img/sharp-libvips-*` في الشجرة لا يثبت أن هذه المكتبة داخل حزمة المتصفح؛ لم يجد التدقيق استيرادًا مباشرًا لها في كود المشروع.
 - تراخيص النماذج والوسائط والخطوط ليست جزءًا من هذا الجرد، وهي موثقة منفصلة في `THIRD_PARTY_NOTICES.md` و`ASSET_LICENSES.md`.
