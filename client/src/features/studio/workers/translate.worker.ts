@@ -15,6 +15,25 @@ type TranslationPipeline = (
 let translator: TranslationPipeline | null = null;
 let activeLanguage = "";
 
+function normalizedTranslationInput(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+async function translateOne(text: string): Promise<string> {
+  const candidates = [text, normalizedTranslationInput(text)].filter(
+    (candidate, index, all) =>
+      candidate.length > 0 && all.indexOf(candidate) === index,
+  );
+  for (const candidate of candidates) {
+    const output = await translator!(candidate, {
+      max_new_tokens: Math.min(256, Math.max(64, candidate.length * 2)),
+    });
+    const translated = output[0]?.translation_text?.trim() ?? "";
+    if (translated) return translated;
+  }
+  return "";
+}
+
 interface TranslateRequest {
   jobId: string;
   language: "fr" | "es" | "de" | "ar";
@@ -50,8 +69,10 @@ self.onmessage = async (event: MessageEvent<TranslateRequest>) => {
     }
     const translated: string[] = [];
     for (let index = 0; index < texts.length; index += 1) {
-      const output = await translator(texts[index], { max_new_tokens: 180 });
-      translated.push(output[0]?.translation_text?.trim() ?? "");
+      // Some browser/ONNX runs can transiently return an empty beam for a
+      // valid short line. Retry with normalized whitespace before reporting
+      // the empty result to the caller; never substitute the English source.
+      translated.push(await translateOne(texts[index] ?? ""));
       self.postMessage({
         jobId,
         type: "progress",
