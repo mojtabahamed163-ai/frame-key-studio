@@ -39,6 +39,7 @@ import {
   toWordCues,
   WORD_CUE_PREFIX,
 } from "@/features/studio/analysis/clip-analysis";
+import { combineCaptionTracks } from "@/features/studio/analysis/caption-tracks";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import {
   exportSrt,
@@ -189,24 +190,6 @@ function translatedCuesFor(
   return project.translatedCues.filter(cue =>
     cue.id.startsWith(`translated-${language}-`)
   );
-}
-
-function combineCaptionTracks(
-  source: CaptionCue[],
-  translated: CaptionCue[]
-): CaptionCue[] {
-  return source.map((sourceCue, index) => {
-    const translatedCue =
-      translated.find(cue => cue.id.endsWith(`-${sourceCue.id}`)) ??
-      translated[index];
-    const text = [sourceCue.text.trim(), translatedCue?.text.trim()].filter(Boolean);
-    return {
-      ...sourceCue,
-      id: `dual-${sourceCue.id}`,
-      text: text.join("\n"),
-      words: [],
-    };
-  });
 }
 
 function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
