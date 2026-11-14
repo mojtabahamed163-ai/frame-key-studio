@@ -41,6 +41,7 @@ import {
 } from "@/features/studio/analysis/clip-analysis";
 import { selectCaptionCuesForMode } from "@/features/studio/analysis/caption-tracks";
 import { sameCaptionSnapshot } from "@/features/studio/analysis/caption-snapshot";
+import { isCurrentCaptionRun } from "@/features/studio/analysis/caption-job";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import {
   exportSrt,
@@ -260,6 +261,7 @@ export default function Studio() {
   const faceController = useRef<AbortController | null>(null);
   const exportController = useRef<AbortController | null>(null);
   const translationController = useRef<AbortController | null>(null);
+  const translationRunId = useRef(0);
   const sourceSaveInProgress = useRef(false);
   const [project, setProject] = useState<StudioProject | null>(null);
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
@@ -539,6 +541,15 @@ export default function Studio() {
 
   function changeSettings(patch: Partial<StudioSettings>) {
     const next = { ...settings, ...patch };
+    if (
+      (patch.captionProcessingMode !== undefined &&
+        patch.captionProcessingMode !== settings.captionProcessingMode) ||
+      (patch.targetLanguage !== undefined &&
+        patch.targetLanguage !== settings.targetLanguage)
+    ) {
+      translationRunId.current += 1;
+      translationController.current?.abort();
+    }
     invalidateClipOutputs();
     setSettings(next);
     if (project) commitProject({ ...project, settings: next });
@@ -826,6 +837,8 @@ export default function Studio() {
               : "Preparing the local OPUS-MT translation model",
         });
         try {
+          const runId = ++translationRunId.current;
+          translationController.current = controller;
           const translated =
             targetLanguage === "en"
               ? copyEnglishCues(captions)
@@ -836,7 +849,12 @@ export default function Studio() {
                   controller.signal
                 );
           if (
-            controller.signal.aborted ||
+            !isCurrentCaptionRun(
+              runId,
+              translationRunId.current,
+              controller.signal,
+              translationController.current?.signal ?? null,
+            ) ||
             analysisController.current !== controller
           )
             return;
@@ -866,8 +884,11 @@ export default function Studio() {
               `Whisper transcription is complete and remains available, but local translation failed: ${cause instanceof Error ? cause.message : "unknown translation error"}`
             );
         } finally {
-          setIsTranslating(false);
-          setTranslationProgress(null);
+          if (translationController.current === controller) {
+            translationController.current = null;
+            setIsTranslating(false);
+            setTranslationProgress(null);
+          }
         }
       }
     } catch (cause) {
@@ -1166,6 +1187,7 @@ export default function Studio() {
     const sourceSnapshot = sourceTrackCues;
     const targetLanguage = settings.targetLanguage;
     const clipSnapshot = { start: activeClip.start, end: activeClip.end };
+    const runId = ++translationRunId.current;
     if (project.sourceLanguage !== "en") {
       setError(
         "The bundled OPUS-MT models currently translate from English. Choose English as the speech language, transcribe again, then choose a target language."
@@ -1195,7 +1217,14 @@ export default function Studio() {
               setTranslationProgress,
               controller.signal
             );
-      if (controller.signal.aborted || translationController.current !== controller)
+      if (
+        !isCurrentCaptionRun(
+          runId,
+          translationRunId.current,
+          controller.signal,
+          translationController.current?.signal ?? null,
+        )
+      )
         return;
       invalidateClipOutputs([activeClip.id]);
       commitProjectUpdate(projectId, current =>
@@ -1222,8 +1251,10 @@ export default function Studio() {
           cause instanceof Error ? cause.message : "Local translation failed."
         );
     } finally {
-      setIsTranslating(false);
-      translationController.current = null;
+      if (translationController.current === controller) {
+        setIsTranslating(false);
+        translationController.current = null;
+      }
     }
   }
 
