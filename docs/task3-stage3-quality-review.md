@@ -2,21 +2,20 @@
 
 Date: 2026-11-14
 
-The quality review was performed against the current `main` checkout after the caption-run fix. No export profile, codec, frame-rate, source-aware resolution rule, caption background behavior, or RTL rendering rule was downgraded.
+This stage reviewed the current `main` code after the asynchronous caption fixes. No export profile, codec selection, source-aware resolution rule, frame-rate rule, audio encoding setting, caption background behavior, or RTL rendering rule was reduced.
 
-## Reviewed implementation
+## Reviewed behavior
 
-- `client/src/features/studio/export/convert-clip.ts` still selects WebM through the existing browser export path, preserves video and audio streams, and derives the portrait canvas from the source-aware effective height rather than blindly upscaling.
-- Caption drawing remains transparent over the video. The Arabic path draws a restrained outline first and the white glyph fill second, preserving connected Arabic letters and contrast without a covering rectangle.
-- `client/src/features/studio/components/VideoPreview.tsx` and `caption-placement.ts` still resolve a stable preferred caption zone and move only when the tracked face would be covered.
-- `caption-tracks.ts` still composes source first and translated line second for the dual mode. It selects only the requested track for the two single-track modes.
-- The new async guard changes only which stale result may commit; it does not mutate a saved source or translation track when display settings change.
+- `convert-clip.ts` keeps the existing browser export path and preserves primary video and audio streams. The output height remains capped at the source height; the selected 1280×720 landscape source therefore yields a 405×720 portrait canvas rather than manufacturing larger detail. Video bitrate remains 6 Mbps at 720-pixel height and 12 Mbps at 1920-pixel height, with 30 fps output. The audio path remains Opus for WebM or AAC for MP4 at 128 kbps, stereo, 48 kHz encoder capability checks.
+- Captions remain transparent over the video. The renderer uses a restrained glyph outline and shadow; the Arabic path sets RTL direction and strokes before white fill so the outline does not obscure thin connected glyphs.
+- `VideoPreview.tsx` and `caption-placement.ts` keep the preferred zone stable and move away only when tracked face placement would be unsafe. The exporter holds the chosen safe caption position across frames.
+- `caption-tracks.ts` composes the source line first and its translation below it in dual mode. It matches by source cue identity, not array order. The two single-track modes select only their respective track. The recent async fix changes which translation result may be committed; it does not clear the saved source or translation track when the user changes modes.
 
-## Automated evidence
+## Regression checks
 
-- `pnpm check` — PASS.
-- Full `pnpm test -- --run` — PASS: 19 files, 128 tests.
-- Baseline `pnpm build` and `pnpm audit --prod` — PASS before the stage 2 code change; the stage 2 change is typechecked and covered by the full test run.
+- `pnpm check` — PASS after the latest code change.
+- Full Vitest suite — PASS: 19 files, 132 tests.
+- Focused quality/track suite — PASS: 5 files, 52 tests covering export profiles, cropping, captions, placement, clip analysis, and track composition.
 - `git diff --check` — PASS.
 
-The browser media run did not produce a new post-fix export from the full 5:25 source in this sandbox. Therefore this stage records preservation by code review and regression tests, not a new visual acceptance claim. Historical WebM/VP9/Opus export evidence remains in `PHASE7_REAL_MEDIA_ACCEPTANCE_REPORT.md` and `MISSION3_HANDOFF_TO_NEW_MANUS_AR.md` with its original commit and limitations.
+This stage is a code and regression-test review, not a new visual export acceptance. A fresh full-source browser export after the current fixes is still pending; do not treat earlier exported files as proof of the latest Arabic glyph-rendering or export behavior. The practical re-export will be recorded only after the selected current test video is processed in the app and the resulting media is inspected.
