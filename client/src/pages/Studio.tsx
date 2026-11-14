@@ -2306,6 +2306,34 @@ export default function Studio() {
                         Import SRT/VTT
                       </button>
                     </div>
+                    <div className="studio-translation-row">
+                      <label className="studio-field">
+                        Caption workflow
+                        <select
+                          value={settings.captionProcessingMode}
+                          onChange={event =>
+                            changeSettings({
+                              captionProcessingMode: event.target
+                                .value as StudioSettings["captionProcessingMode"],
+                            })
+                          }
+                        >
+                          <option value="transcribe-only">
+                            Transcription only — source line
+                          </option>
+                          <option value="translate-only">
+                            Translation only — translated line
+                          </option>
+                          <option value="transcribe-and-translate">
+                            Transcription + translation — both lines
+                          </option>
+                        </select>
+                      </label>
+                      <p className="studio-small-copy">
+                        Change the displayed track without deleting the saved
+                        source or translated captions.
+                      </p>
+                    </div>
                     <p className="studio-caption-mode-note">
                       {settings.captionProcessingMode === "transcribe-only"
                         ? "Output track: transcription only."
