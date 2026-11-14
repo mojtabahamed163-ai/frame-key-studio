@@ -1,0 +1,31 @@
+{
+    "programs": [
+
+    ],
+    "streams": [
+        {
+            "index": 0,
+            "codec_name": "vp9",
+            "codec_type": "video",
+            "width": 405,
+            "height": 720,
+            "pix_fmt": "yuv420p",
+            "r_frame_rate": "30/1"
+        },
+        {
+            "index": 1,
+            "codec_name": "opus",
+            "codec_type": "audio",
+            "sample_rate": "48000",
+            "channels": 2,
+            "r_frame_rate": "0/0"
+        }
+    ],
+    "format": {
+        "filename": "/home/ubuntu/Downloads/So-what-anything-on-your-mind-that-I-should-know-about.webm",
+        "format_name": "matroska,webm",
+        "duration": "21.847000",
+        "size": "11209198",
+        "bit_rate": "4104617"
+    }
+}
