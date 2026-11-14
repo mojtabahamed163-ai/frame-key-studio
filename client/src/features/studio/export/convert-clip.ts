@@ -219,25 +219,27 @@ function drawCaption(
     : "#C9794B";
   ctx.save();
   const fontSize = Math.max(
-    34,
-    Math.round(height * (style === "bold" ? 0.039 : 0.032))
+    24,
+    Math.round(height * (style === "bold" ? 0.027 : 0.024))
   );
   ctx.font = `${style === "bold" ? 800 : 650} ${fontSize}px ${fontFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const maxWidth = ctx.canvas.width * 0.84;
-  const tokens = cue.text.split(/\s+/).filter(Boolean);
+  const maxWidth = ctx.canvas.width * 0.82;
   const lines: string[] = [];
-  let line = "";
-  for (const token of tokens) {
-    const next = line ? `${line} ${token}` : token;
-    if (line && ctx.measureText(next).width > maxWidth) {
-      lines.push(line);
-      line = token;
-    } else line = next;
+  for (const paragraph of cue.text.split(/\r?\n/)) {
+    const tokens = paragraph.split(/\s+/).filter(Boolean);
+    let line = "";
+    for (const token of tokens) {
+      const next = line ? `${line} ${token}` : token;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = token;
+      } else line = next;
+    }
+    if (line) lines.push(line);
   }
-  if (line) lines.push(line);
-  const visibleLines = lines.slice(0, 3);
+  const visibleLines = lines.slice(0, 4);
   const lineHeight = fontSize * 1.22;
   const blockHeight = visibleLines.length * lineHeight;
   // Title cards occupy the upper third during their opening window. If a user
@@ -252,7 +254,7 @@ function drawCaption(
           ? 0.2
           : position === "middle"
             ? 0.5
-            : 0.72;
+            : 0.68;
   const y = ctx.canvas.height * positionY - blockHeight / 2;
   // Never paint a caption panel. A restrained glyph outline and shadow preserve
   // readability on both bright and dark footage without obscuring the image.

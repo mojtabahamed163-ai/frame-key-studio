@@ -181,6 +181,34 @@ function sourceCues(project: StudioProject): CaptionCue[] {
     : buildCaptionCues(project.words);
 }
 
+function translatedCuesFor(
+  project: StudioProject,
+  language: StudioSettings["targetLanguage"]
+): CaptionCue[] {
+  if (language === "none" || project.translatedLanguage !== language) return [];
+  return project.translatedCues.filter(cue =>
+    cue.id.startsWith(`translated-${language}-`)
+  );
+}
+
+function combineCaptionTracks(
+  source: CaptionCue[],
+  translated: CaptionCue[]
+): CaptionCue[] {
+  return source.map((sourceCue, index) => {
+    const translatedCue =
+      translated.find(cue => cue.id.endsWith(`-${sourceCue.id}`)) ??
+      translated[index];
+    const text = [sourceCue.text.trim(), translatedCue?.text.trim()].filter(Boolean);
+    return {
+      ...sourceCue,
+      id: `dual-${sourceCue.id}`,
+      text: text.join("\n"),
+      words: [],
+    };
+  });
+}
+
 function transcriptionWarningText(codes: TranscriptionWarningCode[]): string {
   const messages: string[] = [];
   if (codes.includes("timestamp-outside-source-tail"))
@@ -310,29 +338,58 @@ export default function Studio() {
         : null,
     [activeClip, faceKeyframes]
   );
+  const sourceTrackCues = useMemo(
+    () => (project ? sourceCues(project) : []),
+    [project]
+  );
+  const translatedTrackCues = useMemo(
+    () =>
+      project ? translatedCuesFor(project, settings.targetLanguage) : [],
+    [project, settings.targetLanguage]
+  );
   const currentCues = useMemo(() => {
     if (!project) return [];
-    const translatedForLanguage = project.translatedCues.filter(cue =>
-      cue.id.startsWith(`translated-${settings.targetLanguage}-`)
-    );
-    const translatedForClip = activeClip
-      ? translatedForLanguage.some(
-          cue => cue.end >= activeClip.start && cue.start <= activeClip.end
-        )
-      : translatedForLanguage.length > 0;
+    const translatedReady = translatedTrackCues.length > 0;
     const cues =
-      settings.targetLanguage !== "none" &&
-      project.translatedLanguage === settings.targetLanguage &&
-      translatedForClip
-        ? translatedForLanguage
-        : sourceCues(project);
+      settings.captionProcessingMode === "translate-only" && translatedReady
+        ? translatedTrackCues
+        : sourceTrackCues;
     const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
     return ensureMinimumCueDisplayDuration(
       displayedCues,
       activeClip?.start ?? 0,
       activeClip?.end ?? project.duration
     );
-  }, [project, settings.targetLanguage, settings.captionMode, activeClip]);
+  }, [
+    project,
+    sourceTrackCues,
+    translatedTrackCues,
+    settings.captionMode,
+    settings.captionProcessingMode,
+    activeClip,
+  ]);
+  const displayCues = useMemo(() => {
+    if (!project) return [];
+    const cues =
+      settings.captionProcessingMode === "transcribe-and-translate" &&
+      translatedTrackCues.length
+        ? combineCaptionTracks(sourceTrackCues, translatedTrackCues)
+        : currentCues;
+    const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
+    return ensureMinimumCueDisplayDuration(
+      displayedCues,
+      activeClip?.start ?? 0,
+      activeClip?.end ?? project.duration
+    );
+  }, [
+    project,
+    sourceTrackCues,
+    translatedTrackCues,
+    currentCues,
+    settings.captionMode,
+    settings.captionProcessingMode,
+    activeClip,
+  ]);
   const currentClipCues = useMemo(
     () =>
       activeClip
@@ -696,10 +753,10 @@ export default function Studio() {
   async function runTranscription() {
     if (!sourceFile || !project) return;
     const autoTranslate =
-      settings.captionProcessingMode === "transcribe-and-translate";
+      settings.captionProcessingMode !== "transcribe-only";
     const targetLanguage = settings.targetLanguage;
     if (autoTranslate && targetLanguage === "none") {
-      setError("Choose a target language before starting Transcribe + translate.");
+      setError("Choose one target language before starting translation.");
       return;
     }
     if (autoTranslate && project.sourceLanguage !== "en") {
@@ -1096,7 +1153,7 @@ export default function Studio() {
   }
 
   async function runTranslation() {
-    if (!project || !activeClip || !currentCues.length) return;
+    if (!project || !activeClip || !sourceTrackCues.length) return;
     if (project.sourceLanguage !== "en") {
       setError(
         "The bundled OPUS-MT models currently translate from English. Choose English as the speech language, transcribe again, then choose a target language."
@@ -1114,7 +1171,7 @@ export default function Studio() {
     const controller = new AbortController();
     translationController.current = controller;
     try {
-      const inClip = sourceCues(project).filter(
+      const inClip = sourceTrackCues.filter(
         cue => cue.end >= activeClip.start && cue.start <= activeClip.end
       );
       const translated =
@@ -1201,18 +1258,15 @@ export default function Studio() {
 
   function chooseSubtitleForExport(clip: ClipSuggestion): CaptionCue[] {
     if (!project) return [];
-    const translatedForLanguage = project.translatedCues.filter(cue =>
-      cue.id.startsWith(`translated-${settings.targetLanguage}-`)
-    );
-    const translatedForClip = translatedForLanguage.some(
-      cue => cue.end >= clip.start && cue.start <= clip.end
-    );
+    const source = sourceCues(project);
+    const translated = translatedCuesFor(project, settings.targetLanguage);
     const cues =
-      settings.targetLanguage !== "none" &&
-      project.translatedLanguage === settings.targetLanguage &&
-      translatedForClip
-        ? translatedForLanguage
-        : sourceCues(project);
+      settings.captionProcessingMode === "transcribe-and-translate" &&
+      translated.length
+        ? combineCaptionTracks(source, translated)
+        : settings.captionProcessingMode !== "transcribe-only" && translated.length
+          ? translated
+          : source;
     const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
     return ensureMinimumCueDisplayDuration(displayedCues, clip.start, clip.end);
   }
@@ -1725,17 +1779,21 @@ export default function Studio() {
                           }
                         >
                           <option value="transcribe-only">
-                            Transcribe only — keep the spoken language
+                            Transcription only — show the spoken language
+                          </option>
+                          <option value="translate-only">
+                            Translation only — show one translated language
                           </option>
                           <option value="transcribe-and-translate">
-                            Transcribe + translate — translate after Whisper
+                            Transcription + translation — show both lines
                           </option>
                         </select>
                         <small>
-                          {settings.captionProcessingMode ===
-                          "transcribe-and-translate"
-                            ? "Whisper runs first, then the timed transcript is translated locally. English is kept unchanged."
-                            : "Transcribe only leaves speech in its original language. You can translate the timed transcript later."}
+                          {settings.captionProcessingMode === "transcribe-only"
+                            ? "Only the timed speech transcript will appear in the video."
+                            : settings.captionProcessingMode === "translate-only"
+                              ? "Whisper creates the timed source internally, but only one selected translation appears in the video."
+                              : "The timed transcript appears first and one selected translation appears beneath it."}
                         </small>
                       </label>
                       <label className="studio-field">
@@ -1756,8 +1814,7 @@ export default function Studio() {
                           ))}
                         </select>
                       </label>
-                      {settings.captionProcessingMode ===
-                        "transcribe-and-translate" && (
+                      {settings.captionProcessingMode !== "transcribe-only" && (
                           <label className="studio-field">
                             Target language
                             <select
@@ -1769,8 +1826,8 @@ export default function Studio() {
                                 })
                               }
                             >
-                              <option value="none">Choose a target language</option>
-                              <option value="en">English — keep original</option>
+                            <option value="none">Choose one target language</option>
+                            <option value="en">English</option>
                               <option value="ar">Arabic</option>
                               <option value="fr">French</option>
                               <option value="es">Spanish</option>
@@ -1785,8 +1842,8 @@ export default function Studio() {
                           onClick={() => void runTranscription()}
                           disabled={
                             !metadata?.hasAudio ||
-                            (settings.captionProcessingMode ===
-                              "transcribe-and-translate" &&
+                            (settings.captionProcessingMode !==
+                              "transcribe-only" &&
                               (settings.targetLanguage === "none" ||
                                 project.sourceLanguage !== "en"))
                           }
@@ -2068,7 +2125,7 @@ export default function Studio() {
                   <VideoPreview
                     src={previewUrl}
                     clip={activeClip}
-                    cues={currentCues}
+                    cues={displayCues}
                     settings={settings}
                     faceKeyframes={faceKeyframes}
                     videoRef={videoRef}
@@ -2190,7 +2247,15 @@ export default function Studio() {
                         Import SRT/VTT
                       </button>
                     </div>
-                    {settings.targetLanguage !== "none" && (
+                    <p className="studio-caption-mode-note">
+                      {settings.captionProcessingMode === "transcribe-only"
+                        ? "Output track: transcription only."
+                        : settings.captionProcessingMode === "translate-only"
+                          ? "Output track: one translation only."
+                          : "Output tracks: transcription first, then one translation beneath it."}
+                    </p>
+                    {settings.captionProcessingMode !== "transcribe-only" &&
+                      settings.targetLanguage !== "none" && (
                       <div className="studio-translation-row">
                         <label className="studio-field">
                           Target language
@@ -2203,7 +2268,7 @@ export default function Studio() {
                               })
                             }
                           >
-                            <option value="none">No translation</option>
+                            <option value="none">Choose one target language</option>
                             <option value="en">English</option>
                             <option value="ar">Arabic</option>
                             <option value="fr">French</option>
@@ -2217,7 +2282,7 @@ export default function Studio() {
                           onClick={() => void runTranslation()}
                           disabled={
                             isTranslating ||
-                            !currentCues.length ||
+                            !sourceTrackCues.length ||
                             project.sourceLanguage !== "en"
                           }
                         >
@@ -2228,7 +2293,8 @@ export default function Studio() {
                         </button>
                       </div>
                     )}
-                    {settings.targetLanguage === "none" && (
+                    {settings.captionProcessingMode !== "transcribe-only" &&
+                      settings.targetLanguage === "none" && (
                       <div className="studio-translation-row">
                         <label className="studio-field">
                           Target language
@@ -2241,7 +2307,7 @@ export default function Studio() {
                               })
                             }
                           >
-                            <option value="none">No translation</option>
+                            <option value="none">Choose one target language</option>
                             <option value="en">English</option>
                             <option value="ar">Arabic</option>
                             <option value="fr">French</option>
@@ -2255,14 +2321,16 @@ export default function Studio() {
                         </p>
                       </div>
                     )}
-                    {settings.targetLanguage !== "none" && (
+                    {settings.captionProcessingMode !== "transcribe-only" &&
+                      settings.targetLanguage !== "none" && (
                       <p className="studio-small-copy">
                         Translation is explicit and local. Review the Whisper
                         source captions first; the bundled OPUS-MT models
                         currently accept English source text.
                       </p>
                     )}
-                    {settings.targetLanguage !== "none" &&
+                    {settings.captionProcessingMode !== "transcribe-only" &&
+                      settings.targetLanguage !== "none" &&
                       project.sourceLanguage !== "en" && (
                         <p className="studio-inline-warning">
                           <AlertTriangle size={14} />
@@ -3007,7 +3075,7 @@ export default function Studio() {
                   cues={
                     activeClip
                       ? chooseSubtitleForExport(activeClip)
-                      : currentCues
+                      : displayCues
                   }
                   settings={settings}
                   faceKeyframes={faceKeyframes}

@@ -95,6 +95,7 @@ export type OutputPlatform =
 export type TranslationLanguage = "none" | "en" | "ar" | "fr" | "es" | "de";
 export type CaptionProcessingMode =
   | "transcribe-only"
+  | "translate-only"
   | "transcribe-and-translate";
 export type StepId = "upload" | "select" | "edit" | "export";
 
