@@ -1,0 +1,6 @@
+Browser-side checks performed during phase 01:
+- Hugging Face config.json: HTTP 200
+- encoder_model_quantized.onnx: HTTP 200, CORS: *
+- decoder_model_merged_quantized.onnx: HTTP 200, CORS: *
+- Studio worker: /src/features/studio/workers/transcribe.worker.ts?worker_file&type=module
+- UI progressed from Getting the local speech model / 0% to Transcribed 84 of 325 seconds / 26%.
