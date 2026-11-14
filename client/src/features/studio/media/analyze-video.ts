@@ -31,6 +31,7 @@ export interface FittedWordTime { start: number; end: number }
 const TARGET_RATE = 16_000;
 const TIMESTAMP_TOLERANCE_SECONDS = 0.18;
 const MIN_WORD_DURATION_SECONDS = 0.04;
+const RECOGNITION_TIMEOUT_MS = 120_000;
 export const MAX_WORD_DURATION_SECONDS = 1.5;
 export const TRANSCRIPTION_CHUNK_SECONDS = 24;
 export const TRANSCRIPTION_OVERLAP_SECONDS = 4;
@@ -230,11 +231,17 @@ export function nextSampleWithAbort<T>(iterator: AsyncIterator<T>, signal: Abort
 function recognize(worker: Worker, audio: Float32Array, offsetSeconds: number, language: string, signal: AbortSignal, onProgress: (progress: AnalysisProgress) => void): Promise<RawWord[]> {
   const jobId = `asr-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return new Promise((resolve, reject) => {
+    let timeout: number | null = null;
     const cleanup = () => {
       worker.removeEventListener("message", handleMessage);
       signal.removeEventListener("abort", handleAbort);
+      if (timeout !== null) window.clearTimeout(timeout);
     };
     const handleAbort = () => { cleanup(); reject(new DOMException("Analysis cancelled.", "AbortError")); };
+    const handleTimeout = () => {
+      cleanup();
+      reject(new Error("Whisper stopped responding for 2 minutes while decoding an audio window. Retry analysis or choose a manual clip."));
+    };
     const handleMessage = (event: MessageEvent<WorkerReply>) => {
       const data = event.data;
       if (data.jobId !== jobId) return;
@@ -253,6 +260,7 @@ function recognize(worker: Worker, audio: Float32Array, offsetSeconds: number, l
     worker.addEventListener("message", handleMessage);
     signal.addEventListener("abort", handleAbort, { once: true });
     if (signal.aborted) { handleAbort(); return; }
+    timeout = window.setTimeout(handleTimeout, RECOGNITION_TIMEOUT_MS);
     worker.postMessage({ jobId, audio, offsetSeconds, language }, [audio.buffer]);
   });
 }
