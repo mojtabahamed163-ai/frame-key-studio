@@ -1,0 +1,762 @@
+# جرد التبعيات والتراخيص
+
+مولّد من `pnpm licenses list --json` بعد `pnpm install --frozen-lockfile --ignore-scripts` على commit `27f2ab8`. يشمل 707 إدخالات حزم محلولة، مع النسخ كما ظهرت في lockfile. وسم `(dev)` يعني أن الحزمة ضمن مسار البناء/الاختبار وليست اعتماد تشغيل مباشر.
+
+## (MIT OR CC0-1.0) (1)
+
+- `type-fest` — 0.20.2
+
+## (MPL-2.0 OR Apache-2.0) (1)
+
+- `dompurify` — 3.4.17
+
+## 0BSD (1)
+
+- `tslib` — 2.4.0, 2.8.1
+
+## Apache-2.0 (48)
+
+- `@aws-sdk/checksums` — 3.1001.4
+- `@aws-sdk/client-s3` — 3.1154.0
+- `@aws-sdk/core` — 3.978.4
+- `@aws-sdk/credential-provider-env` — 3.972.75
+- `@aws-sdk/credential-provider-http` — 3.972.77
+- `@aws-sdk/credential-provider-ini` — 3.973.20
+- `@aws-sdk/credential-provider-login` — 3.972.82
+- `@aws-sdk/credential-provider-node` — 3.972.87
+- `@aws-sdk/credential-provider-process` — 3.972.75
+- `@aws-sdk/credential-provider-sso` — 3.973.19
+- `@aws-sdk/credential-provider-web-identity` — 3.972.81
+- `@aws-sdk/middleware-sdk-s3` — 3.972.80
+- `@aws-sdk/nested-clients` — 3.997.49
+- `@aws-sdk/s3-request-presigner` — 3.1154.0
+- `@aws-sdk/signature-v4-multi-region` — 3.996.48
+- `@aws-sdk/token-providers` — 3.1153.0
+- `@aws-sdk/types` — 3.974.6
+- `@aws-sdk/xml-builder` — 3.972.41
+- `@aws/lambda-invoke-store` — 0.3.0
+- `@chevrotain/types` — 11.1.2
+- `@drizzle-team/brocli` — 0.10.2
+- `@huggingface/tokenizers` — 0.2.0
+- `@huggingface/transformers` — 4.3.1
+- `@img/sharp-linux-arm64` — 0.35.5
+- `@img/sharp-linuxmusl-arm64` — 0.35.5
+- `@mediapipe/face_detection` — 0.4.1646425229
+- `@smithy/core` — 3.36.2
+- `@smithy/credential-provider-imds` — 4.5.2
+- `@smithy/fetch-http-handler` — 5.8.0
+- `@smithy/node-http-handler` — 4.12.1
+- `@smithy/signature-v4` — 5.7.4
+- `@smithy/types` — 4.19.0
+- `@tensorflow-models/face-detection` — 1.0.3
+- `@tensorflow/tfjs-backend-cpu` — 4.22.0
+- `@tensorflow/tfjs-backend-webgl` — 4.22.0
+- `@tensorflow/tfjs-converter` — 4.22.0
+- `@tensorflow/tfjs-core` — 4.22.0
+- `baseline-browser-mapping` — 2.8.12
+- `class-variance-authority` — 0.7.1
+- `detect-libc` — 2.1.2
+- `drizzle-orm` — 0.45.4
+- `expect-type` — 1.2.2
+- `fake-indexeddb` — 6.2.8
+- `flatbuffers` — 25.9.23
+- `long` — 4.0.0, 5.3.2
+- `sharp` — 0.35.5
+- `streamdown` — 1.4.0
+- `typescript` — 5.9.3
+
+## BSD-2-Clause (3)
+
+- `dotenv` — 17.2.3
+- `entities` — 6.0.1
+- `webidl-conversions` — 3.0.1
+
+## BSD-3-Clause (22)
+
+- `@protobufjs/aspromise` — 1.1.2
+- `@protobufjs/base64` — 1.1.2
+- `@protobufjs/codegen` — 2.0.5
+- `@protobufjs/eventemitter` — 1.1.1
+- `@protobufjs/fetch` — 1.1.1
+- `@protobufjs/float` — 1.0.2
+- `@protobufjs/path` — 1.1.2
+- `@protobufjs/pool` — 1.1.0
+- `@protobufjs/utf8` — 1.1.2
+- `@webgpu/types` — 0.1.38
+- `d3-array` — 2.12.1
+- `d3-ease` — 3.0.1
+- `d3-path` — 1.0.9
+- `d3-sankey` — 0.12.3
+- `d3-shape` — 1.3.7
+- `global-agent` — 4.1.3
+- `protobufjs` — 7.6.6
+- `qs` — 6.17.1
+- `react-transition-group` — 4.4.5
+- `rw` — 1.3.3
+- `source-map` — 0.6.1
+- `source-map-js` — 1.2.1
+
+## BlueOak-1.0.0 (2)
+
+- `chownr` — 3.0.0
+- `yallist` — 5.0.0
+
+## CC-BY-4.0 (1)
+
+- `caniuse-lite` — 1.0.30001748
+
+## ISC (55)
+
+- `@isaacs/fs-minipass` — 4.0.1
+- `@ungap/structured-clone` — 1.3.0
+- `d3` — 7.9.0
+- `d3-array` — 3.2.4
+- `d3-axis` — 3.0.0
+- `d3-brush` — 3.0.0
+- `d3-chord` — 3.0.1
+- `d3-color` — 3.1.0
+- `d3-contour` — 4.0.2
+- `d3-delaunay` — 6.0.4
+- `d3-dispatch` — 3.0.1
+- `d3-drag` — 3.0.0
+- `d3-dsv` — 3.0.1
+- `d3-fetch` — 3.0.1
+- `d3-force` — 3.0.0
+- `d3-format` — 3.1.0
+- `d3-geo` — 3.1.1
+- `d3-hierarchy` — 3.1.2
+- `d3-interpolate` — 3.0.1
+- `d3-path` — 3.1.0
+- `d3-polygon` — 3.0.1
+- `d3-quadtree` — 3.0.1
+- `d3-random` — 3.0.1
+- `d3-scale` — 4.0.2
+- `d3-scale-chromatic` — 3.1.0
+- `d3-selection` — 3.0.0
+- `d3-shape` — 3.2.0
+- `d3-time` — 3.1.0
+- `d3-time-format` — 4.1.0
+- `d3-timer` — 3.0.1
+- `d3-transition` — 3.0.1
+- `d3-zoom` — 3.0.0
+- `delaunator` — 5.0.1
+- `electron-to-chromium` — 1.5.230
+- `fs.realpath` — 1.0.0
+- `glob` — 7.2.3
+- `graceful-fs` — 4.2.11
+- `guid-typescript` — 1.0.9
+- `hast-util-from-dom` — 5.0.1
+- `inflight` — 1.0.6
+- `inherits` — 2.0.4
+- `internmap` — 1.0.1, 2.0.3
+- `lru-cache` — 5.1.1
+- `lucide-react` — 0.453.0, 0.542.0
+- `minimatch` — 3.1.5
+- `minipass` — 7.1.2
+- `once` — 1.4.0
+- `picocolors` — 1.1.1
+- `rimraf` — 3.0.2
+- `semver` — 6.3.1, 7.8.5
+- `setprototypeof` — 1.2.0
+- `siginfo` — 2.0.0
+- `tar` — 7.5.1
+- `wrappy` — 1.0.2
+- `yallist` — 3.1.1
+
+## LGPL-3.0-or-later (2)
+
+- `@img/sharp-libvips-linux-arm64` — 1.3.4
+- `@img/sharp-libvips-linuxmusl-arm64` — 1.3.4
+
+## MIT (561)
+
+- `@antfu/install-pkg` — 1.1.0
+- `@antfu/utils` — 9.3.0
+- `@babel/code-frame` — 7.27.1
+- `@babel/compat-data` — 7.28.4
+- `@babel/core` — 7.28.4
+- `@babel/generator` — 7.28.3
+- `@babel/helper-compilation-targets` — 7.27.2
+- `@babel/helper-globals` — 7.28.0
+- `@babel/helper-module-imports` — 7.27.1
+- `@babel/helper-module-transforms` — 7.28.3
+- `@babel/helper-plugin-utils` — 7.27.1
+- `@babel/helper-string-parser` — 7.27.1
+- `@babel/helper-validator-identifier` — 7.27.1
+- `@babel/helper-validator-option` — 7.27.1
+- `@babel/helpers` — 7.28.4
+- `@babel/parser` — 7.28.4
+- `@babel/plugin-transform-react-jsx-self` — 7.27.1
+- `@babel/plugin-transform-react-jsx-source` — 7.27.1
+- `@babel/runtime` — 7.28.4
+- `@babel/template` — 7.27.2
+- `@babel/traverse` — 7.28.4
+- `@babel/types` — 7.28.4
+- `@braintree/sanitize-url` — 7.1.2
+- `@date-fns/tz` — 1.4.1
+- `@esbuild-kit/core-utils` — 3.3.2
+- `@esbuild-kit/esm-loader` — 2.6.5
+- `@esbuild/linux-arm64` — 0.18.20, 0.21.5, 0.25.10, 0.28.2
+- `@floating-ui/core` — 1.7.3
+- `@floating-ui/dom` — 1.7.4
+- `@floating-ui/react-dom` — 2.1.6
+- `@floating-ui/utils` — 0.2.10
+- `@hookform/resolvers` — 5.2.2
+- `@huggingface/jinja` — 0.5.10
+- `@iconify/types` — 2.0.0
+- `@iconify/utils` — 3.0.2
+- `@img/colour` — 1.1.0
+- `@jridgewell/gen-mapping` — 0.3.13
+- `@jridgewell/remapping` — 2.3.5
+- `@jridgewell/resolve-uri` — 3.1.2
+- `@jridgewell/sourcemap-codec` — 1.5.5
+- `@jridgewell/trace-mapping` — 0.3.31
+- `@mermaid-js/parser` — 1.2.1
+- `@radix-ui/number` — 1.1.1
+- `@radix-ui/primitive` — 1.1.3
+- `@radix-ui/react-accordion` — 1.2.12
+- `@radix-ui/react-alert-dialog` — 1.1.15
+- `@radix-ui/react-arrow` — 1.1.7
+- `@radix-ui/react-aspect-ratio` — 1.1.7
+- `@radix-ui/react-avatar` — 1.1.10
+- `@radix-ui/react-checkbox` — 1.3.3
+- `@radix-ui/react-collapsible` — 1.1.12
+- `@radix-ui/react-collection` — 1.1.7
+- `@radix-ui/react-compose-refs` — 1.1.2
+- `@radix-ui/react-context` — 1.1.2
+- `@radix-ui/react-context-menu` — 2.2.16
+- `@radix-ui/react-dialog` — 1.1.15
+- `@radix-ui/react-direction` — 1.1.1
+- `@radix-ui/react-dismissable-layer` — 1.1.11
+- `@radix-ui/react-dropdown-menu` — 2.1.16
+- `@radix-ui/react-focus-guards` — 1.1.3
+- `@radix-ui/react-focus-scope` — 1.1.7
+- `@radix-ui/react-hover-card` — 1.1.15
+- `@radix-ui/react-id` — 1.1.1
+- `@radix-ui/react-label` — 2.1.7
+- `@radix-ui/react-menu` — 2.1.16
+- `@radix-ui/react-menubar` — 1.1.16
+- `@radix-ui/react-navigation-menu` — 1.2.14
+- `@radix-ui/react-popover` — 1.1.15
+- `@radix-ui/react-popper` — 1.2.8
+- `@radix-ui/react-portal` — 1.1.9
+- `@radix-ui/react-presence` — 1.1.5
+- `@radix-ui/react-primitive` — 2.1.3
+- `@radix-ui/react-progress` — 1.1.7
+- `@radix-ui/react-radio-group` — 1.3.8
+- `@radix-ui/react-roving-focus` — 1.1.11
+- `@radix-ui/react-scroll-area` — 1.2.10
+- `@radix-ui/react-select` — 2.2.6
+- `@radix-ui/react-separator` — 1.1.7
+- `@radix-ui/react-slider` — 1.3.6
+- `@radix-ui/react-slot` — 1.2.3
+- `@radix-ui/react-switch` — 1.2.6
+- `@radix-ui/react-tabs` — 1.1.13
+- `@radix-ui/react-toggle` — 1.1.10
+- `@radix-ui/react-toggle-group` — 1.1.11
+- `@radix-ui/react-tooltip` — 1.2.8
+- `@radix-ui/react-use-callback-ref` — 1.1.1
+- `@radix-ui/react-use-controllable-state` — 1.2.2
+- `@radix-ui/react-use-effect-event` — 0.0.2
+- `@radix-ui/react-use-escape-keydown` — 1.1.1
+- `@radix-ui/react-use-is-hydrated` — 0.1.0
+- `@radix-ui/react-use-layout-effect` — 1.1.1
+- `@radix-ui/react-use-previous` — 1.1.1
+- `@radix-ui/react-use-rect` — 1.1.1
+- `@radix-ui/react-use-size` — 1.1.1
+- `@radix-ui/react-visually-hidden` — 1.2.3
+- `@radix-ui/rect` — 1.1.1
+- `@rolldown/pluginutils` — 1.0.0-beta.38
+- `@rollup/rollup-linux-arm64-gnu` — 4.52.4
+- `@rollup/rollup-linux-arm64-musl` — 4.52.4
+- `@shikijs/core` — 3.14.0
+- `@shikijs/engine-javascript` — 3.14.0
+- `@shikijs/engine-oniguruma` — 3.14.0
+- `@shikijs/langs` — 3.14.0
+- `@shikijs/themes` — 3.14.0
+- `@shikijs/types` — 3.14.0
+- `@shikijs/vscode-textmate` — 10.0.2
+- `@standard-schema/utils` — 0.3.0
+- `@tailwindcss/node` — 4.1.14
+- `@tailwindcss/oxide` — 4.1.14
+- `@tailwindcss/oxide-linux-arm64-gnu` — 4.1.14
+- `@tailwindcss/oxide-linux-arm64-musl` — 4.1.14
+- `@tailwindcss/typography` — 0.5.19
+- `@tailwindcss/vite` — 4.1.14
+- `@tanstack/query-core` — 5.90.2
+- `@tanstack/react-query` — 5.90.2
+- `@trpc/client` — 11.19.0
+- `@trpc/react-query` — 11.19.0
+- `@trpc/server` — 11.19.0
+- `@types/babel__core` — 7.20.5
+- `@types/babel__generator` — 7.27.0
+- `@types/babel__template` — 7.4.4
+- `@types/babel__traverse` — 7.28.0
+- `@types/body-parser` — 1.19.6
+- `@types/connect` — 3.4.38
+- `@types/d3` — 7.4.3
+- `@types/d3-array` — 3.2.2
+- `@types/d3-axis` — 3.0.6
+- `@types/d3-brush` — 3.0.6
+- `@types/d3-chord` — 3.0.6
+- `@types/d3-color` — 3.1.3
+- `@types/d3-contour` — 3.0.6
+- `@types/d3-delaunay` — 6.0.4
+- `@types/d3-dispatch` — 3.0.7
+- `@types/d3-drag` — 3.0.7
+- `@types/d3-dsv` — 3.0.7
+- `@types/d3-ease` — 3.0.2
+- `@types/d3-fetch` — 3.0.7
+- `@types/d3-force` — 3.0.10
+- `@types/d3-format` — 3.0.4
+- `@types/d3-geo` — 3.1.0
+- `@types/d3-hierarchy` — 3.1.7
+- `@types/d3-interpolate` — 3.0.4
+- `@types/d3-path` — 3.1.1
+- `@types/d3-polygon` — 3.0.2
+- `@types/d3-quadtree` — 3.0.6
+- `@types/d3-random` — 3.0.3
+- `@types/d3-scale` — 4.0.9
+- `@types/d3-scale-chromatic` — 3.1.0
+- `@types/d3-selection` — 3.0.11
+- `@types/d3-shape` — 3.1.7
+- `@types/d3-time` — 3.0.4
+- `@types/d3-time-format` — 4.0.3
+- `@types/d3-timer` — 3.0.2
+- `@types/d3-transition` — 3.0.9
+- `@types/d3-zoom` — 3.0.8
+- `@types/debug` — 4.1.12
+- `@types/dom-mediacapture-transform` — 0.1.12
+- `@types/dom-webcodecs` — 0.1.13
+- `@types/estree` — 1.0.8
+- `@types/estree-jsx` — 1.0.5
+- `@types/express` — 4.17.21
+- `@types/express-serve-static-core` — 4.19.6
+- `@types/geojson` — 7946.0.16
+- `@types/google.maps` — 3.58.1
+- `@types/hast` — 3.0.4
+- `@types/http-errors` — 2.0.5
+- `@types/katex` — 0.16.7
+- `@types/long` — 4.0.2
+- `@types/mdast` — 4.0.4
+- `@types/mime` — 1.3.5
+- `@types/ms` — 2.1.0
+- `@types/node` — 24.7.0
+- `@types/offscreencanvas` — 2019.3.0, 2019.7.3
+- `@types/qs` — 6.14.0
+- `@types/range-parser` — 1.2.7
+- `@types/react` — 19.2.1
+- `@types/react-dom` — 19.2.1
+- `@types/seedrandom` — 2.4.34
+- `@types/send` — 0.17.5, 1.2.0
+- `@types/serve-static` — 1.15.9
+- `@types/trusted-types` — 2.0.7
+- `@types/unist` — 2.0.11, 3.0.3
+- `@upsetjs/venn.js` — 2.0.0
+- `@vitejs/plugin-react` — 5.0.4
+- `@vitest/expect` — 2.1.9
+- `@vitest/mocker` — 2.1.9
+- `@vitest/pretty-format` — 2.1.9
+- `@vitest/runner` — 2.1.9
+- `@vitest/snapshot` — 2.1.9
+- `@vitest/spy` — 2.1.9
+- `@vitest/utils` — 2.1.9
+- `accepts` — 1.3.8
+- `acorn` — 8.15.0
+- `add` — 2.0.6
+- `adm-zip` — 0.6.1
+- `agent-base` — 6.0.2
+- `aria-hidden` — 1.2.6
+- `array-flatten` — 1.1.1
+- `assertion-error` — 2.0.1
+- `asynckit` — 0.4.0
+- `autoprefixer` — 10.4.21
+- `aws-ssl-profiles` — 1.1.2
+- `axios` — 1.21.1
+- `bail` — 2.0.2
+- `balanced-match` — 1.0.2
+- `body-parser` — 1.20.9
+- `bowser` — 2.12.1
+- `brace-expansion` — 1.1.21
+- `browserslist` — 4.26.3
+- `buffer-from` — 1.1.2
+- `bytes` — 3.1.2
+- `cac` — 6.7.14
+- `call-bind-apply-helpers` — 1.0.2
+- `call-bound` — 1.0.4
+- `ccount` — 2.0.1
+- `chai` — 5.3.3
+- `character-entities` — 2.0.2
+- `character-entities-html4` — 2.1.0
+- `character-entities-legacy` — 3.0.0
+- `character-reference-invalid` — 2.0.1
+- `check-error` — 2.1.1
+- `clsx` — 2.1.1
+- `cmdk` — 1.1.1
+- `combined-stream` — 1.0.8
+- `comma-separated-tokens` — 2.0.3
+- `commander` — 7.2.0, 15.0.0
+- `concat-map` — 0.0.1
+- `confbox` — 0.1.8, 0.2.2
+- `content-disposition` — 0.5.4
+- `content-type` — 1.0.5
+- `convert-source-map` — 2.0.0
+- `cookie` — 0.7.2, 1.0.2
+- `cookie-signature` — 1.0.7
+- `copy-anything` — 3.0.5
+- `cose-base` — 1.0.3, 2.2.0
+- `cssesc` — 3.0.0
+- `csstype` — 3.1.3
+- `cytoscape` — 3.34.4
+- `cytoscape-cose-bilkent` — 4.1.0
+- `cytoscape-fcose` — 2.2.0
+- `dagre-d3-es` — 7.0.14
+- `date-fns` — 4.1.0
+- `date-fns-jalali` — 4.1.0-0
+- `dayjs` — 1.11.23
+- `debug` — 2.6.9, 4.4.3
+- `decimal.js-light` — 2.5.1
+- `decode-named-character-reference` — 1.2.0
+- `deep-eql` — 5.0.2
+- `define-data-property` — 1.1.4
+- `define-properties` — 1.2.1
+- `delayed-stream` — 1.0.0
+- `depd` — 2.0.0
+- `dequal` — 2.0.3
+- `destroy` — 1.2.0
+- `detect-node-es` — 1.1.0
+- `devlop` — 1.1.0 (dev)
+- `dom-helpers` — 5.2.1
+- `drizzle-kit` — 0.31.11
+- `dunder-proto` — 1.0.1
+- `ee-first` — 1.1.1
+- `embla-carousel` — 8.6.0
+- `embla-carousel-react` — 8.6.0
+- `embla-carousel-reactive-utils` — 8.6.0
+- `encodeurl` — 2.0.3
+- `enhanced-resolve` — 5.18.3
+- `es-define-property` — 1.0.1
+- `es-errors` — 1.3.0
+- `es-module-lexer` — 1.7.0
+- `es-object-atoms` — 1.1.2
+- `es-set-tostringtag` — 2.1.0
+- `es-toolkit` — 1.52.0
+- `esbuild` — 0.18.20, 0.21.5, 0.25.10, 0.28.2
+- `escalade` — 3.2.0
+- `escape-html` — 1.0.3
+- `escape-string-regexp` — 4.0.0, 5.0.0
+- `estree-util-is-identifier-name` — 3.0.0
+- `estree-walker` — 2.0.2, 3.0.3
+- `etag` — 1.8.1
+- `eventemitter3` — 4.0.7
+- `express` — 4.22.3
+- `exsolve` — 1.0.7
+- `extend` — 3.0.2
+- `fast-equals` — 5.3.2
+- `fastdom` — 1.0.12
+- `fdir` — 6.5.0
+- `fflate` — 0.8.3
+- `finalhandler` — 1.3.2
+- `follow-redirects` — 1.16.3
+- `form-data` — 4.0.6
+- `forwarded` — 0.2.0
+- `fraction.js` — 4.3.7
+- `framer-motion` — 12.23.22
+- `fresh` — 0.5.2
+- `function-bind` — 1.1.2
+- `generate-function` — 2.3.1
+- `gensync` — 1.0.0-beta.2
+- `get-intrinsic` — 1.3.0
+- `get-nonce` — 1.0.1
+- `get-proto` — 1.0.1
+- `get-tsconfig` — 4.10.1
+- `globals` — 15.15.0
+- `globalthis` — 1.0.4
+- `gopd` — 1.2.0
+- `hachure-fill` — 0.5.2
+- `has-property-descriptors` — 1.0.2
+- `has-symbols` — 1.1.0
+- `has-tostringtag` — 1.0.2
+- `hasown` — 2.0.4
+- `hast-util-from-html` — 2.0.3
+- `hast-util-from-html-isomorphic` — 2.0.0
+- `hast-util-from-parse5` — 8.0.3
+- `hast-util-is-element` — 3.0.0
+- `hast-util-parse-selector` — 4.0.0
+- `hast-util-raw` — 9.1.0
+- `hast-util-to-html` — 9.0.5
+- `hast-util-to-jsx-runtime` — 2.3.6
+- `hast-util-to-parse5` — 8.0.0
+- `hast-util-to-text` — 4.0.2
+- `hast-util-whitespace` — 3.0.0
+- `hastscript` — 9.0.1
+- `html-url-attributes` — 3.0.1
+- `html-void-elements` — 3.0.0
+- `http-errors` — 2.0.1
+- `https-proxy-agent` — 5.0.1
+- `iconv-lite` — 0.4.24, 0.6.3, 0.7.3
+- `inline-style-parser` — 0.2.4
+- `input-otp` — 1.4.2
+- `ipaddr.js` — 1.9.1
+- `is-alphabetical` — 2.0.1
+- `is-alphanumerical` — 2.0.1
+- `is-decimal` — 2.0.1
+- `is-hexadecimal` — 2.0.1
+- `is-plain-obj` — 4.1.0
+- `is-property` — 1.0.2
+- `is-what` — 4.1.16
+- `isarray` — 0.0.1
+- `jiti` — 2.6.1
+- `jose` — 6.1.0
+- `js-tokens` — 4.0.0
+- `jsesc` — 3.1.0
+- `json5` — 2.2.3
+- `katex` — 0.19.0
+- `kolorist` — 1.8.0
+- `layout-base` — 1.0.2, 2.0.1
+- `local-pkg` — 1.1.2
+- `lodash` — 4.18.1
+- `lodash-es` — 4.18.1
+- `longest-streak` — 3.1.0
+- `loose-envify` — 1.4.0
+- `loupe` — 3.2.1
+- `lru.min` — 1.1.5
+- `magic-string` — 0.30.19
+- `markdown-table` — 3.0.4
+- `marked` — 16.4.1
+- `matcher` — 4.0.0
+- `math-intrinsics` — 1.1.0
+- `mdast-util-find-and-replace` — 3.0.2
+- `mdast-util-from-markdown` — 2.0.2
+- `mdast-util-gfm` — 3.1.0
+- `mdast-util-gfm-autolink-literal` — 2.0.1
+- `mdast-util-gfm-footnote` — 2.1.0
+- `mdast-util-gfm-strikethrough` — 2.0.0
+- `mdast-util-gfm-table` — 2.0.0
+- `mdast-util-gfm-task-list-item` — 2.0.0
+- `mdast-util-math` — 3.0.0
+- `mdast-util-mdx-expression` — 2.0.1
+- `mdast-util-mdx-jsx` — 3.2.0
+- `mdast-util-mdxjs-esm` — 2.0.1
+- `mdast-util-phrasing` — 4.1.0
+- `mdast-util-to-hast` — 13.2.1
+- `mdast-util-to-markdown` — 2.1.2
+- `mdast-util-to-string` — 4.0.0
+- `media-typer` — 0.3.0
+- `merge-descriptors` — 1.0.3
+- `mermaid` — 11.17.2
+- `methods` — 1.1.2
+- `micromark` — 4.0.2
+- `micromark-core-commonmark` — 2.0.3
+- `micromark-extension-gfm` — 3.0.0
+- `micromark-extension-gfm-autolink-literal` — 2.1.0
+- `micromark-extension-gfm-footnote` — 2.1.0
+- `micromark-extension-gfm-strikethrough` — 2.1.0
+- `micromark-extension-gfm-table` — 2.1.1
+- `micromark-extension-gfm-tagfilter` — 2.0.0
+- `micromark-extension-gfm-task-list-item` — 2.1.0
+- `micromark-extension-math` — 3.1.0
+- `micromark-factory-destination` — 2.0.1
+- `micromark-factory-label` — 2.0.1
+- `micromark-factory-space` — 2.0.1
+- `micromark-factory-title` — 2.0.1
+- `micromark-factory-whitespace` — 2.0.1
+- `micromark-util-character` — 2.1.1
+- `micromark-util-chunked` — 2.0.1
+- `micromark-util-classify-character` — 2.0.1
+- `micromark-util-combine-extensions` — 2.0.1
+- `micromark-util-decode-numeric-character-reference` — 2.0.2
+- `micromark-util-decode-string` — 2.0.1
+- `micromark-util-encode` — 2.0.1
+- `micromark-util-html-tag-name` — 2.0.1
+- `micromark-util-normalize-identifier` — 2.0.1
+- `micromark-util-resolve-all` — 2.0.1
+- `micromark-util-sanitize-uri` — 2.0.1
+- `micromark-util-subtokenize` — 2.1.0
+- `micromark-util-symbol` — 2.0.1
+- `micromark-util-types` — 2.0.2
+- `mime` — 1.6.0
+- `mime-db` — 1.52.0
+- `mime-types` — 2.1.35
+- `minizlib` — 3.1.0
+- `mitt` — 3.0.1
+- `mlly` — 1.8.0
+- `motion-dom` — 12.23.21
+- `motion-utils` — 12.23.6
+- `ms` — 2.0.0, 2.1.3
+- `mysql2` — 3.24.6
+- `named-placeholders` — 1.1.6
+- `nanoid` — 3.3.11, 5.1.16
+- `negotiator` — 0.6.3
+- `next-themes` — 0.4.6
+- `node-fetch` — 2.6.13
+- `node-releases` — 2.0.23
+- `normalize-range` — 0.1.2
+- `object-assign` — 4.1.1
+- `object-inspect` — 1.13.4
+- `object-keys` — 1.1.1
+- `on-finished` — 2.4.2
+- `oniguruma-parser` — 0.12.1
+- `oniguruma-to-es` — 4.3.3
+- `onnxruntime-common` — 1.30.0, 1.31.0-dev.20260911-2a43ec07e (dev)
+- `onnxruntime-node` — 1.30.0
+- `onnxruntime-web` — 1.31.0-dev.20260914-8d85527a0 (dev)
+- `package-manager-detector` — 1.5.0
+- `parse-entities` — 4.0.2
+- `parse5` — 7.3.0
+- `parseurl` — 1.3.3
+- `path-data-parser` — 0.1.0
+- `path-is-absolute` — 1.0.1
+- `path-to-regexp` — 1.9.0
+- `pathe` — 1.1.2, 2.0.3
+- `pathval` — 2.0.1
+- `picomatch` — 4.0.3
+- `pkg-types` — 1.3.1, 2.3.0
+- `platform` — 1.3.6
+- `pnpm` — 10.18.0
+- `points-on-curve` — 0.2.0
+- `points-on-path` — 0.2.1
+- `postcss` — 8.5.6
+- `postcss-selector-parser` — 6.0.10
+- `postcss-value-parser` — 4.2.0
+- `prettier` — 3.6.2
+- `prop-types` — 15.8.1
+- `property-information` — 6.5.0, 7.1.0
+- `proxy-addr` — 2.0.8
+- `proxy-from-env` — 2.1.0
+- `quansync` — 0.2.11
+- `range-parser` — 1.2.1
+- `raw-body` — 2.5.3
+- `react` — 19.2.1
+- `react-day-picker` — 9.11.1
+- `react-dom` — 19.2.1
+- `react-hook-form` — 7.64.0
+- `react-is` — 16.13.1, 18.3.1
+- `react-markdown` — 10.1.0
+- `react-refresh` — 0.17.0
+- `react-remove-scroll` — 2.7.1
+- `react-remove-scroll-bar` — 2.3.8
+- `react-resizable-panels` — 3.0.6
+- `react-smooth` — 4.0.4
+- `react-style-singleton` — 2.2.3
+- `recharts` — 2.15.4
+- `recharts-scale` — 0.4.5
+- `regex` — 6.0.1
+- `regex-recursion` — 6.0.2
+- `regex-utilities` — 2.3.0
+- `regexparam` — 3.0.0
+- `rehype-harden` — 1.1.5
+- `rehype-katex` — 7.0.1
+- `rehype-raw` — 7.0.0
+- `remark-gfm` — 4.0.1
+- `remark-math` — 6.0.0
+- `remark-parse` — 11.0.0
+- `remark-rehype` — 11.1.2
+- `remark-stringify` — 11.0.0
+- `resolve-pkg-maps` — 1.0.0
+- `rollup` — 4.52.4
+- `roughjs` — 4.6.6
+- `safe-buffer` — 5.2.1
+- `safer-buffer` — 2.1.2
+- `scheduler` — 0.27.0
+- `seedrandom` — 3.0.5
+- `send` — 0.19.2
+- `serialize-error` — 8.1.0
+- `serve-static` — 1.16.3
+- `shiki` — 3.14.0
+- `side-channel` — 1.1.1
+- `side-channel-list` — 1.0.1
+- `side-channel-map` — 1.0.1
+- `side-channel-weakmap` — 1.0.2
+- `sonner` — 2.0.7
+- `source-map-support` — 0.5.21
+- `space-separated-tokens` — 2.0.2
+- `sql-escaper` — 1.5.2
+- `stackback` — 0.0.2
+- `statuses` — 2.0.2
+- `std-env` — 3.9.0
+- `strictdom` — 1.0.1
+- `stringify-entities` — 4.0.4
+- `style-to-js` — 1.1.18
+- `style-to-object` — 1.0.11
+- `stylis` — 4.3.6
+- `superjson` — 1.13.3
+- `tailwind-merge` — 3.3.1
+- `tailwindcss` — 4.1.14
+- `tailwindcss-animate` — 1.0.7
+- `tapable` — 2.3.0
+- `tiny-invariant` — 1.3.3
+- `tinybench` — 2.9.0
+- `tinyexec` — 0.3.2, 1.0.1
+- `tinyglobby` — 0.2.15
+- `tinypool` — 1.1.1
+- `tinyrainbow` — 1.2.0
+- `tinyspy` — 3.0.2
+- `toidentifier` — 1.0.1
+- `tr46` — 0.0.3
+- `trim-lines` — 3.0.1
+- `trough` — 2.2.0
+- `ts-dedent` — 2.2.0
+- `tsx` — 4.20.6, 4.23.15
+- `tw-animate-css` — 1.4.0
+- `type-is` — 1.6.18
+- `ufo` — 1.6.1
+- `undici-types` — 7.14.0
+- `unified` — 11.0.5
+- `unist-util-find-after` — 5.0.0
+- `unist-util-is` — 6.0.1
+- `unist-util-position` — 5.0.0
+- `unist-util-remove-position` — 5.0.0
+- `unist-util-stringify-position` — 4.0.0
+- `unist-util-visit` — 5.0.0
+- `unist-util-visit-parents` — 6.0.2
+- `unpipe` — 1.0.0
+- `update-browserslist-db` — 1.1.3
+- `use-callback-ref` — 1.3.3
+- `use-sidecar` — 1.1.3
+- `use-sync-external-store` — 1.6.0
+- `util-deprecate` — 1.0.2
+- `utils-merge` — 1.0.1
+- `uuid` — 14.0.3
+- `vary` — 1.1.2
+- `vaul` — 1.1.2
+- `vfile` — 6.0.3
+- `vfile-location` — 5.0.3
+- `vfile-message` — 4.0.3
+- `vite` — 5.4.20, 7.1.9
+- `vite-node` — 2.1.9
+- `vitest` — 2.1.9
+- `web-namespaces` — 2.0.1
+- `whatwg-url` — 5.0.0
+- `why-is-node-running` — 2.3.0
+- `zod` — 4.6.7
+- `zwitch` — 2.0.4
+
+## MIT AND ISC (1)
+
+- `victory-vendor` — 36.9.2
+
+## MPL-2.0 (4)
+
+- `lightningcss` — 1.30.1
+- `lightningcss-linux-arm64-gnu` — 1.30.1
+- `lightningcss-linux-arm64-musl` — 1.30.1
+- `mediabunny` — 1.61.4
+
+## Unknown (3)
+
+- `@builder.io/jsx-loc-internals` — 0.0.1
+- `@builder.io/vite-plugin-jsx-loc` — 0.1.1
+- `khroma` — 2.1.0
+
+## Unlicense (2)
+
+- `robust-predicates` — 3.0.2
+- `wouter` — 3.7.1
+
+## ملاحظات تدقيق
+
+- جرد الرخصة يصف بيانات الحزم المثبتة، وليس إقرارًا بأن للمشروع حقوقًا أوسع من رخصة كل حزمة.
+- الحزم تحت `Unknown` هي `@builder.io/jsx-loc-internals`, `@builder.io/vite-plugin-jsx-loc`, و`khroma`، وكلها في مسارات بناء/عرض بحسب الشجرة الحالية. يجب حسمها قبل شحن بيئة البناء.
+- وجود LGPL لـ`@img/sharp-libvips-*` في الشجرة لا يثبت أن هذه المكتبة داخل حزمة المتصفح؛ لم يجد التدقيق استيرادًا مباشرًا لها في كود المشروع.
+- تراخيص النماذج والوسائط والخطوط ليست جزءًا من هذا الجرد، وهي موثقة منفصلة في `THIRD_PARTY_NOTICES.md` و`ASSET_LICENSES.md`.
