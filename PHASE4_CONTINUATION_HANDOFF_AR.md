@@ -50,9 +50,10 @@
 - `client/src/features/studio/analysis/caption-tracks.ts`
 - `client/src/features/studio/analysis/caption-tracks.test.ts`
 - هذا التقرير `PHASE4_CONTINUATION_HANDOFF_AR.md`
+- أدلة QA الموثقة في `qa-artifacts/phase4/` (WebM، إطاران، SRT اصطناعي، وREADME بالقيود)
 
-لم تُضف العينة الخام أو ملفات التصدير المؤقتة إلى المستودع.
+العينة الخام نفسها غير مكررة داخل مجلد QA؛ مصدرها موجود مسبقًا في `deliverables/mission2/candidates/clip-1.webm`. أُضيف ملف التصدير وإطارات الإثبات ومدخل SRT الاصطناعي لإبقاء نتيجة الاختبار قابلة للمراجعة. يوضح README أن هذه المواد لا تثبت دقة التفريغ أو الترجمة.
 
 ## التسليم
 
-التغيير البرمجي والتقرير جاهزان للحفظ في `main` ودفعهما إلى `origin/main`. لا تنشر الموقع. إذا أُجري تعديل إضافي لاحقًا، أعد تشغيل `pnpm run check` و`pnpm test` و`pnpm run build:static`.
+التغيير البرمجي والتقرير وأدلة QA محفوظة في المستودع ودُفعت إلى `origin/main`؛ لم يُنشر الموقع. إذا أُجري تعديل إضافي لاحقًا، أعد تشغيل `pnpm run check` و`pnpm test` و`pnpm run build:static`.
