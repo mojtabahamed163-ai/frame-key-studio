@@ -129,6 +129,10 @@ export interface StudioSettings extends BrandSettings {
   templateId: TemplateId;
   titleStyle: TitleStyle;
   captionMode: CaptionMode;
+  captionTextColor: string;
+  captionActiveColor: string;
+  captionStrokeColor: string;
+  captionStrokeWidth: number;
   silenceRemoval: boolean;
   silenceThresholdSeconds: number;
   peakNormalize: boolean;
@@ -190,7 +194,11 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   accentColor: "#C9794B",
   captionStyle: "clean",
   captionPosition: "bottom",
-  captionMode: "block",
+  captionMode: "word",
+  captionTextColor: "#FFFFFF",
+  captionActiveColor: "#39D353",
+  captionStrokeColor: "#000000",
+  captionStrokeWidth: 3,
   fontFamily: "DM Sans, Arial, sans-serif",
   logoPosition: "bottom-right",
   silenceRemoval: false,

@@ -21,6 +21,10 @@ import {
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { cropForPortrait } from "../media/framing";
 import { resolveCaptionPosition } from "../media/caption-placement";
+import {
+  captionStrokePixels,
+  safeCaptionColor,
+} from "../media/caption-appearance";
 import type {
   CaptionCue,
   ClipSuggestion,
@@ -80,11 +84,9 @@ export function videoBitrateForHeight(
   return height >= 1920 ? 12_000_000 : 6_000_000;
 }
 
-export function normalizedFramingMode(mode: string | undefined):
-  | "preserve"
-  | "vertical"
-  | "fit-background"
-  | "smart" {
+export function normalizedFramingMode(
+  mode: string | undefined
+): "preserve" | "vertical" | "fit-background" | "smart" {
   if (mode === "fill") return "vertical";
   if (mode === "full") return "fit-background";
   if (mode === "preserve" || mode === "fit-background" || mode === "smart")
@@ -121,7 +123,11 @@ export function outputDimensions(
       height: Math.max(2, Math.floor(sourceHeight / 2) * 2),
     };
   }
-  const height = effectivePortraitHeight(sourceWidth, sourceHeight, requestedHeight);
+  const height = effectivePortraitHeight(
+    sourceWidth,
+    sourceHeight,
+    requestedHeight
+  );
   return { width: Math.max(2, Math.round((height * 9) / 16)), height };
 }
 
@@ -249,9 +255,9 @@ function drawCaption(
   if (!cue) return;
   const style = settings.captionStyle;
   const fontFamily = settings.fontFamily;
-  const accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor)
-    ? settings.accentColor
-    : "#C9794B";
+  const textColor = safeCaptionColor(settings.captionTextColor, "#FFFFFF");
+  const activeColor = safeCaptionColor(settings.captionActiveColor, "#39D353");
+  const strokeColor = safeCaptionColor(settings.captionStrokeColor, "#000000");
   ctx.save();
   const fontSize = Math.max(
     24,
@@ -294,52 +300,39 @@ function drawCaption(
   // Never paint a caption panel. A restrained glyph outline and shadow preserve
   // readability on both bright and dark footage without obscuring the image.
   ctx.lineJoin = "round";
-  ctx.lineWidth = Math.max(1.5, fontSize * 0.055);
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.82)";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.lineWidth = captionStrokePixels(settings, height);
+  ctx.strokeStyle = strokeColor;
+  ctx.shadowColor = `${strokeColor}CC`;
   ctx.shadowBlur = Math.max(2, fontSize * 0.12);
   ctx.shadowOffsetY = Math.max(1, fontSize * 0.035);
-  const arabic = ARABIC_TEXT.test(cue.text);
-  ctx.direction = arabic ? "rtl" : "ltr";
-  if (arabic) {
-    ctx.lineWidth = Math.max(0.8, fontSize * 0.03);
-    visibleLines.forEach((lineText, lineIndex) => {
-      ctx.strokeText(
-        lineText,
-        ctx.canvas.width / 2,
-        y + fontSize * 0.5 + lineIndex * lineHeight,
-        maxWidth
+  visibleLines.forEach((lineText, lineIndex) => {
+    const arabic = ARABIC_TEXT.test(lineText);
+    ctx.direction = arabic ? "rtl" : "ltr";
+    const lineWords = lineText.split(/\s+/).filter(Boolean);
+    const widths = lineWords.map(word => ctx.measureText(`${word} `).width);
+    const totalWidth = widths.reduce((a, b) => a + b, 0);
+    let cursor = (ctx.canvas.width - totalWidth) / 2;
+    const baseline = y + fontSize * 0.5 + lineIndex * lineHeight;
+    if (arabic || !cue.words.length || lineIndex > 0) {
+      ctx.fillStyle = textColor;
+      ctx.strokeText(lineText, ctx.canvas.width / 2, baseline, maxWidth);
+      ctx.fillText(lineText, ctx.canvas.width / 2, baseline, maxWidth);
+      return;
+    }
+    lineWords.forEach((word, wordIndex) => {
+      const matched = cue.words.find(
+        item =>
+          item.text.replace(/[.,!?;:]$/, "").toLowerCase() ===
+            word.replace(/[.,!?;:]$/, "").toLowerCase() &&
+          absoluteTime >= item.start &&
+          absoluteTime <= item.end
       );
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillText(
-        lineText,
-        ctx.canvas.width / 2,
-        y + fontSize * 0.5 + lineIndex * lineHeight,
-        maxWidth
-      );
+      ctx.fillStyle = matched ? activeColor : textColor;
+      ctx.strokeText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
+      ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
+      cursor += widths[wordIndex];
     });
-  } else {
-    visibleLines.forEach((lineText, lineIndex) => {
-      const lineWords = lineText.split(/\s+/);
-      const widths = lineWords.map(word => ctx.measureText(`${word} `).width);
-      const totalWidth = widths.reduce((a, b) => a + b, 0);
-      let cursor = (ctx.canvas.width - totalWidth) / 2;
-      const baseline = y + fontSize * 0.5 + lineIndex * lineHeight;
-      lineWords.forEach((word, wordIndex) => {
-        const matched = cue.words.find(
-          item =>
-            item.text.replace(/[.,!?;:]$/, "").toLowerCase() ===
-              word.replace(/[.,!?;:]$/, "").toLowerCase() &&
-            absoluteTime >= item.start &&
-            absoluteTime <= item.end
-        );
-        ctx.fillStyle = matched ? accentColor : "#FFFFFF";
-        ctx.fillText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
-        ctx.strokeText(word, cursor + widths[wordIndex] / 2, baseline, maxWidth);
-        cursor += widths[wordIndex];
-      });
-    });
-  }
+  });
   ctx.restore();
 }
 
@@ -673,7 +666,8 @@ export async function exportClip(options: {
           const localTime = Math.max(0, sample.timestamp - firstVideoTime);
           const mappedTime = mapSourceTimeToOutput(localTime, ranges);
           if (mappedTime == null) return null;
-          const useSmartFraming = framingMode === "smart" || project.settings.smartFraming;
+          const useSmartFraming =
+            framingMode === "smart" || project.settings.smartFraming;
           const center = useSmartFraming
             ? faceCenterAt(
                 faceKeyframes,

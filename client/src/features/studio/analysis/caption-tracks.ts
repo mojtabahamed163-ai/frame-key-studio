@@ -25,7 +25,9 @@ export function combineCaptionTracks(
       ...sourceCue,
       id: `dual-${sourceCue.id}`,
       text: text.join("\n"),
-      words: [],
+      // Keep Whisper's source word timings so word-mode captions can highlight
+      // the spoken source while the translated line remains visible beneath it.
+      words: sourceCue.words,
     };
   });
 }

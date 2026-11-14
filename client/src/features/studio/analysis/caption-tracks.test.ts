@@ -23,7 +23,7 @@ describe("caption track composition", () => {
         ...source[0],
         id: "dual-source-a",
         text: "Hello there.\nمرحبًا بك.",
-        words: [],
+        words: source[0].words,
       },
     ]);
   });

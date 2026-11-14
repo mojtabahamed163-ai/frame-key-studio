@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { BrandControls } from "@/features/studio/components/BrandControls";
+import { CaptionAppearanceControls } from "@/features/studio/components/CaptionAppearanceControls";
 import { CaptionCueEditor } from "@/features/studio/components/CaptionCueEditor";
 import { TemplateControls } from "@/features/studio/components/TemplateControls";
 import { StudioHeader } from "@/features/studio/components/StudioHeader";
@@ -2379,6 +2380,10 @@ export default function Studio() {
                           ? "Output track: one translation only."
                           : "Output tracks: transcription first, then one translation beneath it."}
                     </p>
+                    <CaptionAppearanceControls
+                      settings={settings}
+                      onChange={changeSettings}
+                    />
                     {settings.captionProcessingMode !== "transcribe-only" &&
                       settings.targetLanguage !== "none" && (
                       <div className="studio-translation-row">

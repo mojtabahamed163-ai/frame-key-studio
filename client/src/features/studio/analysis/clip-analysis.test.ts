@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaptionCues, ensureMinimumCueDisplayDuration, mapSourceTimeToOutput, normalizeClipBounds, remapCueToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt } from "./clip-analysis";
+import { buildCaptionCues, ensureMinimumCueDisplayDuration, mapSourceTimeToOutput, normalizeClipBounds, remapCueToOutput, sentenceGroups, speechKeepRanges, suggestClips, toSrt, toVtt, toWordCues } from "./clip-analysis";
 import type { TranscriptWord } from "../types";
 
 function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
@@ -7,6 +7,23 @@ function wordsFrom(texts: string[], offset = 0): TranscriptWord[] {
 }
 
 describe("local transcript analysis", () => {
+  it("keeps a translated line visible on every source word cue", () => {
+    const cues = toWordCues([{
+      id: "dual-source",
+      start: 1,
+      end: 2,
+      text: "Hello world\nمرحبًا بالعالم",
+      words: [
+        { id: "hello", text: "Hello", start: 1, end: 1.4 },
+        { id: "world", text: "world", start: 1.4, end: 2 },
+      ],
+    }]);
+    expect(cues.map(cue => cue.text)).toEqual([
+      "Hello\nمرحبًا بالعالم",
+      "world\nمرحبًا بالعالم",
+    ]);
+  });
+
   it("normalizes invalid clip boundaries inside the source duration", () => {
     expect(normalizeClipBounds(-4, 99, 12)).toEqual({ start: 0, end: 12 });
     expect(normalizeClipBounds(11.9, 11.91, 12)).toEqual({ start: 11.75, end: 12 });

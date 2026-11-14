@@ -10,6 +10,10 @@ import { Play } from "lucide-react";
 import { faceCenterAt, type FaceKeyframe } from "../media/face-tracking";
 import { objectPositionForPortraitCrop } from "../media/framing";
 import { resolveCaptionPosition } from "../media/caption-placement";
+import {
+  clampCaptionStrokeWidth,
+  safeCaptionColor,
+} from "../media/caption-appearance";
 import { CAPTION_BACKGROUND } from "../export/convert-clip";
 import type { CaptionCue, ClipSuggestion, StudioSettings } from "../types";
 
@@ -84,7 +88,21 @@ export function VideoPreview({
   )?.id;
   const titleText =
     clip?.selectedTitle?.trim() || clip?.titleOptions[0]?.trim() || "";
-  const isArabic = Boolean(activeCue && /[\u0600-\u06FF]/.test(activeCue.text));
+  const captionTextColor = safeCaptionColor(
+    settings.captionTextColor,
+    "#FFFFFF"
+  );
+  const captionActiveColor = safeCaptionColor(
+    settings.captionActiveColor,
+    "#39D353"
+  );
+  const captionStrokeColor = safeCaptionColor(
+    settings.captionStrokeColor,
+    "#000000"
+  );
+  const captionStrokeWidth = clampCaptionStrokeWidth(
+    settings.captionStrokeWidth
+  );
   if (preferredCaptionPosition.current !== settings.captionPosition) {
     preferredCaptionPosition.current = settings.captionPosition;
     previousCaptionPosition.current = settings.captionPosition;
@@ -134,7 +152,9 @@ export function VideoPreview({
         <span>
           <span className="studio-live-dot" /> LOCAL PREVIEW
         </span>
-        <span>{framingMode === "preserve" ? "ORIGINAL FRAME" : "9:16 / PORTRAIT"}</span>
+        <span>
+          {framingMode === "preserve" ? "ORIGINAL FRAME" : "9:16 / PORTRAIT"}
+        </span>
       </div>
       <div className="studio-preview-frame">
         {framingMode === "fit-background" && (
@@ -181,8 +201,8 @@ export function VideoPreview({
               : framingMode === "fit-background"
                 ? { objectFit: "contain" }
                 : {
-                  objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%`,
-                }
+                    objectPosition: `${objectPosition.x * 100}% ${objectPosition.y * 100}%`,
+                  }
           }
         />
         {logoUrl && (
@@ -211,31 +231,51 @@ export function VideoPreview({
           )}
         {settings.showCaptions && activeCue && (
           <div
-            dir={isArabic ? "rtl" : "ltr"}
-            className={`studio-preview-caption caption-${settings.captionStyle} caption-position-${captionPosition}${isArabic ? " caption-arabic" : ""}`}
+            className={`studio-preview-caption caption-${settings.captionStyle} caption-position-${captionPosition}`}
             style={{
               backgroundColor: CAPTION_BACKGROUND,
               fontFamily: settings.fontFamily,
+              color: captionTextColor,
+              WebkitTextStroke: `${captionStrokeWidth}px ${captionStrokeColor}`,
+              textShadow: `0 2px 7px ${captionStrokeColor}CC`,
             }}
             aria-live="off"
           >
-            {activeCue.words.length ? (
-              activeCue.words.map(word => (
+            {activeCue.text.split(/\r?\n/).map((line, lineIndex) => {
+              const arabic = /[\u0600-\u06FF]/.test(line);
+              const sourceLine = lineIndex === 0;
+              return (
                 <span
-                  key={word.id}
-                  className={word.id === activeWordId ? "is-speaking" : ""}
-                  style={
-                    word.id === activeWordId
-                      ? { color: settings.accentColor }
-                      : undefined
+                  key={`${activeCue.id}-line-${lineIndex}`}
+                  className={
+                    arabic
+                      ? "caption-line caption-line--arabic"
+                      : "caption-line"
                   }
+                  dir={arabic ? "rtl" : "ltr"}
                 >
-                  {word.text}{" "}
+                  {sourceLine && activeCue.words.length
+                    ? activeCue.words.map(word => (
+                        <span
+                          key={word.id}
+                          className={
+                            word.id === activeWordId ? "is-speaking" : ""
+                          }
+                          style={{
+                            color:
+                              word.id === activeWordId
+                                ? captionActiveColor
+                                : captionTextColor,
+                            WebkitTextStroke: `${captionStrokeWidth}px ${captionStrokeColor}`,
+                          }}
+                        >
+                          {word.text}{" "}
+                        </span>
+                      ))
+                    : line}
                 </span>
-              ))
-            ) : (
-              <span>{activeCue.text}</span>
-            )}
+              );
+            })}
           </div>
         )}
         {!clip && (
@@ -269,10 +309,10 @@ export function VideoPreview({
           {framingMode === "preserve"
             ? "ORIGINAL FRAME"
             : center.x < 0.48
-            ? "FRAME LEFT"
-            : center.x > 0.52
-              ? "FRAME RIGHT"
-              : "CENTER FRAME"}
+              ? "FRAME LEFT"
+              : center.x > 0.52
+                ? "FRAME RIGHT"
+                : "CENTER FRAME"}
         </span>
       </div>
     </div>

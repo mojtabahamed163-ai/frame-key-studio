@@ -126,7 +126,15 @@ function countTimingAnomalies(words: TranscriptWord[], start: number, end: numbe
 
 export function toWordCues(cues: CaptionCue[]): CaptionCue[] {
   return cues.flatMap((cue) => cue.words.length
-    ? cue.words.map((word) => ({ id: `${WORD_CUE_PREFIX}${word.id}`, start: word.start, end: word.end, text: word.text, words: [word] }))
+    ? cue.words.map((word) => ({
+        id: `${WORD_CUE_PREFIX}${word.id}`,
+        start: word.start,
+        end: word.end,
+        text: cue.text.includes("\n")
+          ? `${word.text}\n${cue.text.split("\n").slice(1).join("\n")}`
+          : word.text,
+        words: [word],
+      }))
     : [cue]);
 }
 
