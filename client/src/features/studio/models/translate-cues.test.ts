@@ -69,12 +69,32 @@ describe("translation cue mapping", () => {
     ]);
   });
 
-  it("replaces the previous language instead of mixing Arabic and French cues", () => {
+  it("preserves other language tracks when a new language is translated", () => {
     const arabic = mapTranslationResults(cues, "ar", ["نبدأ الاجتماع الآن.", "يمكننا المساعدة."]);
     const french = mapTranslationResults(cues.slice(0, 1), "fr", ["La réunion commence maintenant."]);
     const merged = mergeTranslatedCues(arabic, "ar", french, "fr", ["cue-a"]);
-    expect(merged.map(cue => cue.id)).toEqual(["translated-fr-cue-a"]);
-    expect(merged.map(cue => cue.text)).toEqual(["La réunion commence maintenant."]);
+    const byId = Object.fromEntries(merged.map(cue => [cue.id, cue.text]));
+    expect(byId).toEqual({
+      "translated-fr-cue-a": "La réunion commence maintenant.",
+      "translated-ar-cue-a": "نبدأ الاجتماع الآن.",
+      "translated-ar-cue-b": "يمكننا المساعدة.",
+    });
+  });
+
+  it("replaces only the selected source line in the selected language", () => {
+    const existing = [
+      ...mapTranslationResults(cues, "fr", ["Réunion.", "Aider."]),
+      ...mapTranslationResults(cues, "ar", ["اجتماع.", "مساعدة."]),
+    ];
+    const revised = mapTranslationResults(cues.slice(0, 1), "fr", ["La réunion."]);
+    const merged = mergeTranslatedCues(existing, "ar", revised, "fr", ["cue-a"]);
+    const byId = Object.fromEntries(merged.map(cue => [cue.id, cue.text]));
+    expect(byId).toEqual({
+      "translated-fr-cue-a": "La réunion.",
+      "translated-fr-cue-b": "Aider.",
+      "translated-ar-cue-a": "اجتماع.",
+      "translated-ar-cue-b": "مساعدة.",
+    });
   });
 
   it("updates one same-language clip while preserving other translated captions", () => {

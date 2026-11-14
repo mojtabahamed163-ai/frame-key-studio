@@ -55,21 +55,15 @@ export function copyEnglishCues(cues: CaptionCue[]): CaptionCue[] {
 
 export function mergeTranslatedCues(
   existingCues: CaptionCue[],
-  existingLanguage: TranslationLanguage,
+  _existingLanguage: TranslationLanguage,
   translatedCues: CaptionCue[],
   nextLanguage: TranslationLanguage,
   replacedSourceCueIds: string[]
 ): CaptionCue[] {
-  const keep =
-    existingLanguage === nextLanguage
-      ? existingCues.filter(
-          cue =>
-            cue.id.startsWith(`translated-${nextLanguage}-`) &&
-            !replacedSourceCueIds.some(
-              sourceId => cue.id === `translated-${nextLanguage}-${sourceId}`
-            )
-        )
-      : [];
+  const replacedIds = new Set(
+    replacedSourceCueIds.map(sourceId => `translated-${nextLanguage}-${sourceId}`)
+  );
+  const keep = existingCues.filter(cue => !replacedIds.has(cue.id));
   return [...keep, ...translatedCues].sort((a, b) => a.start - b.start);
 }
 

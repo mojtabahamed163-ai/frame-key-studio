@@ -39,7 +39,7 @@ import {
   toWordCues,
   WORD_CUE_PREFIX,
 } from "@/features/studio/analysis/clip-analysis";
-import { combineCaptionTracks } from "@/features/studio/analysis/caption-tracks";
+import { selectCaptionCuesForMode } from "@/features/studio/analysis/caption-tracks";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import {
   exportSrt,
@@ -182,11 +182,17 @@ function sourceCues(project: StudioProject): CaptionCue[] {
     : buildCaptionCues(project.words);
 }
 
+function sameCueSnapshot(current: CaptionCue[], expected: CaptionCue[]): boolean {
+  if (current.length !== expected.length) return false;
+  const currentById = new Map(current.map(cue => [cue.id, cue.text]));
+  return expected.every(cue => currentById.get(cue.id) === cue.text);
+}
+
 function translatedCuesFor(
   project: StudioProject,
   language: StudioSettings["targetLanguage"]
 ): CaptionCue[] {
-  if (language === "none" || project.translatedLanguage !== language) return [];
+  if (language === "none") return [];
   return project.translatedCues.filter(cue =>
     cue.id.startsWith(`translated-${language}-`)
   );
@@ -332,9 +338,8 @@ export default function Studio() {
   );
   const currentCues = useMemo(() => {
     if (!project) return [];
-    const translatedReady = translatedTrackCues.length > 0;
     const cues =
-      settings.captionProcessingMode === "translate-only" && translatedReady
+      settings.captionProcessingMode === "translate-only"
         ? translatedTrackCues
         : sourceTrackCues;
     const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
@@ -353,11 +358,11 @@ export default function Studio() {
   ]);
   const displayCues = useMemo(() => {
     if (!project) return [];
-    const cues =
-      settings.captionProcessingMode === "transcribe-and-translate" &&
-      translatedTrackCues.length
-        ? combineCaptionTracks(sourceTrackCues, translatedTrackCues)
-        : currentCues;
+    const cues = selectCaptionCuesForMode(
+      sourceTrackCues,
+      translatedTrackCues,
+      settings.captionProcessingMode
+    );
     const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
     return ensureMinimumCueDisplayDuration(
       displayedCues,
@@ -494,6 +499,17 @@ export default function Studio() {
 
   function commitProject(next: StudioProject) {
     setProject({ ...next, updatedAt: Date.now() });
+  }
+
+  function commitProjectUpdate(
+    projectId: string,
+    update: (current: StudioProject) => StudioProject
+  ) {
+    setProject(current =>
+      current?.id === projectId
+        ? { ...update(current), updatedAt: Date.now() }
+        : current
+    );
   }
 
   function invalidateClipOutputs(clipIds?: string[]) {
@@ -735,6 +751,7 @@ export default function Studio() {
 
   async function runTranscription() {
     if (!sourceFile || !project) return;
+    const projectId = project.id;
     const autoTranslate =
       settings.captionProcessingMode !== "transcribe-only";
     const targetLanguage = settings.targetLanguage;
@@ -777,8 +794,9 @@ export default function Studio() {
         );
       const suggestions = suggestClips(words, 3, project.duration);
       const captions = buildCaptionCues(words);
-      const next: StudioProject = {
-        ...project,
+      invalidateClipOutputs();
+      commitProjectUpdate(projectId, current => ({
+        ...current,
         words,
         transcriptionWarnings: transcription.warnings,
         editedCues: captions,
@@ -788,9 +806,7 @@ export default function Studio() {
         selectedClipId: suggestions[0]?.id ?? null,
         faceKeyframesByClip: {},
         step: suggestions.length ? "select" : "upload",
-      };
-      invalidateClipOutputs();
-      commitProject(next);
+      }));
       setSelectedForBatch(suggestions.map(clip => clip.id));
       const reviewCount = suggestions.filter(
         clip => clip.quality === "review"
@@ -824,12 +840,26 @@ export default function Studio() {
                   setTranslationProgress,
                   controller.signal
                 );
-          if (controller.signal.aborted) return;
-          commitProject({
-            ...next,
-            translatedCues: translated,
-            translatedLanguage: targetLanguage,
-          });
+          if (
+            controller.signal.aborted ||
+            analysisController.current !== controller
+          )
+            return;
+          commitProjectUpdate(projectId, current =>
+            sameCueSnapshot(sourceCues(current), captions)
+              ? {
+                  ...current,
+                  translatedCues: mergeTranslatedCues(
+                    current.translatedCues,
+                    current.translatedLanguage,
+                    translated,
+                    targetLanguage,
+                    captions.map(cue => cue.id)
+                  ),
+                  translatedLanguage: targetLanguage,
+                }
+              : current
+          );
           setNotice(
             targetLanguage === "en"
               ? `${suggestions.length} clip suggestion${suggestions.length === 1 ? " was" : "s were"} created. English captions were kept unchanged; no translation model was run.${warningNotice}`
@@ -1137,13 +1167,17 @@ export default function Studio() {
 
   async function runTranslation() {
     if (!project || !activeClip || !sourceTrackCues.length) return;
+    const projectId = project.id;
+    const sourceSnapshot = sourceTrackCues;
+    const targetLanguage = settings.targetLanguage;
+    const clipSnapshot = { start: activeClip.start, end: activeClip.end };
     if (project.sourceLanguage !== "en") {
       setError(
         "The bundled OPUS-MT models currently translate from English. Choose English as the speech language, transcribe again, then choose a target language."
       );
       return;
     }
-    if (settings.targetLanguage === "none") {
+    if (targetLanguage === "none") {
       setError(
         "Choose English, Arabic, French, Spanish, or German as the target language first."
       );
@@ -1155,31 +1189,37 @@ export default function Studio() {
     translationController.current = controller;
     try {
       const inClip = sourceTrackCues.filter(
-        cue => cue.end >= activeClip.start && cue.start <= activeClip.end
+        cue => cue.end >= clipSnapshot.start && cue.start <= clipSnapshot.end
       );
       const translated =
-        settings.targetLanguage === "en"
+        targetLanguage === "en"
           ? copyEnglishCues(inClip)
           : await translateCues(
               inClip,
-              settings.targetLanguage,
+              targetLanguage,
               setTranslationProgress,
               controller.signal
             );
+      if (controller.signal.aborted || translationController.current !== controller)
+        return;
       invalidateClipOutputs([activeClip.id]);
-      commitProject({
-        ...project,
-        translatedCues: mergeTranslatedCues(
-          project.translatedCues,
-          project.translatedLanguage,
-          translated,
-          settings.targetLanguage,
-          inClip.map(cue => cue.id)
-        ),
-        translatedLanguage: settings.targetLanguage,
-      });
+      commitProjectUpdate(projectId, current =>
+        sameCueSnapshot(sourceCues(current), sourceSnapshot)
+          ? {
+              ...current,
+              translatedCues: mergeTranslatedCues(
+                current.translatedCues,
+                current.translatedLanguage,
+                translated,
+                targetLanguage,
+                inClip.map(cue => cue.id)
+              ),
+              translatedLanguage: targetLanguage,
+            }
+          : current
+      );
       setNotice(
-        `${settings.targetLanguage === "en" ? "Copied" : "Translated"} ${translated.length} caption lines on this device. Timing follows the original speech; review the result before export.`
+        `${targetLanguage === "en" ? "Copied" : "Translated"} ${translated.length} caption lines on this device. Timing follows the original speech; review the result before export.`
       );
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError"))
@@ -1243,13 +1283,11 @@ export default function Studio() {
     if (!project) return [];
     const source = sourceCues(project);
     const translated = translatedCuesFor(project, settings.targetLanguage);
-    const cues =
-      settings.captionProcessingMode === "transcribe-and-translate" &&
-      translated.length
-        ? combineCaptionTracks(source, translated)
-        : settings.captionProcessingMode !== "transcribe-only" && translated.length
-          ? translated
-          : source;
+    const cues = selectCaptionCuesForMode(
+      source,
+      translated,
+      settings.captionProcessingMode
+    );
     const displayedCues = settings.captionMode === "word" ? toWordCues(cues) : cues;
     return ensureMinimumCueDisplayDuration(displayedCues, clip.start, clip.end);
   }
