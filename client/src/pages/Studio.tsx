@@ -40,6 +40,7 @@ import {
   WORD_CUE_PREFIX,
 } from "@/features/studio/analysis/clip-analysis";
 import { selectCaptionCuesForMode } from "@/features/studio/analysis/caption-tracks";
+import { sameCaptionSnapshot } from "@/features/studio/analysis/caption-snapshot";
 import { formatEditableTime } from "@/features/studio/analysis/clip-time";
 import {
   exportSrt,
@@ -180,12 +181,6 @@ function sourceCues(project: StudioProject): CaptionCue[] {
   return project.editedCues.length
     ? project.editedCues
     : buildCaptionCues(project.words);
-}
-
-function sameCueSnapshot(current: CaptionCue[], expected: CaptionCue[]): boolean {
-  if (current.length !== expected.length) return false;
-  const currentById = new Map(current.map(cue => [cue.id, cue.text]));
-  return expected.every(cue => currentById.get(cue.id) === cue.text);
 }
 
 function translatedCuesFor(
@@ -846,7 +841,7 @@ export default function Studio() {
           )
             return;
           commitProjectUpdate(projectId, current =>
-            sameCueSnapshot(sourceCues(current), captions)
+            sameCaptionSnapshot(sourceCues(current), captions)
               ? {
                   ...current,
                   translatedCues: mergeTranslatedCues(
@@ -1204,7 +1199,7 @@ export default function Studio() {
         return;
       invalidateClipOutputs([activeClip.id]);
       commitProjectUpdate(projectId, current =>
-        sameCueSnapshot(sourceCues(current), sourceSnapshot)
+        sameCaptionSnapshot(sourceCues(current), sourceSnapshot)
           ? {
               ...current,
               translatedCues: mergeTranslatedCues(
