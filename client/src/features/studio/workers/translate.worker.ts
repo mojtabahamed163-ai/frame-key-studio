@@ -20,13 +20,20 @@ function normalizedTranslationInput(text: string): string {
 }
 
 async function translateOne(text: string): Promise<string> {
-  const candidates = [text, normalizedTranslationInput(text)].filter(
+  const normalized = normalizedTranslationInput(text);
+  // Whisper can produce a phrase fragment at a caption boundary. OPUS-MT
+  // occasionally emits an empty beam for that fragment, while the same text
+  // becomes translatable when presented as a complete sentence. These are
+  // retries of the actual source only; no fallback translation is invented.
+  const candidates = [text, normalized, normalized ? `${normalized}.` : ""].filter(
     (candidate, index, all) =>
       candidate.length > 0 && all.indexOf(candidate) === index,
   );
   for (const candidate of candidates) {
     const output = await translator!(candidate, {
       max_new_tokens: Math.min(256, Math.max(64, candidate.length * 2)),
+      num_beams: 4,
+      do_sample: false,
     });
     const translated = output[0]?.translation_text?.trim() ?? "";
     if (translated) return translated;
