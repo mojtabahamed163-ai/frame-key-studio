@@ -1,0 +1,6 @@
+No file was produced during the new buyer-demonstration recording session.
+
+The real application attempted a 30-second WebM export and, as permitted by the task, a 5-second WebM export. Both ended with:
+"Export cancelled. No incomplete file was added to the results."
+
+This marker is intentionally provided instead of copying a prior export. Prior successful exports are historical evidence only and are not claimed as outputs of this recording session.
