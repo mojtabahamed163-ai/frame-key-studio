@@ -189,19 +189,27 @@ export async function requestSaveTarget(
   const picker = (window as SavePickerWindow).showSaveFilePicker;
   if (!picker) return null;
   let settled = false;
-  const pickerRequest = picker({
-    suggestedName: name,
-    types: [
-      {
-        description: format === "mp4" ? "MP4 video" : "WebM video",
-        accept: {
-          [format === "mp4" ? "video/mp4" : "video/webm"]: [
-            `.${format === "mp4" ? "mp4" : "webm"}`,
-          ],
+  let pickerPromise: ReturnType<typeof picker>;
+  try {
+    pickerPromise = picker({
+      suggestedName: name,
+      types: [
+        {
+          description: format === "mp4" ? "MP4 video" : "WebM video",
+          accept: {
+            [format === "mp4" ? "video/mp4" : "video/webm"]: [
+              `.${format === "mp4" ? "mp4" : "webm"}`,
+            ],
+          },
         },
-      },
-    ],
-  })
+      ],
+    });
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "NotAllowedError")
+      return null;
+    throw cause;
+  }
+  const pickerRequest = pickerPromise
     .then(handle => handle.createWritable())
     .then(async writable => {
       if (settled || signal?.aborted) {
@@ -211,19 +219,32 @@ export async function requestSaveTarget(
         return null;
       }
       return writable;
+    })
+    .catch(cause => {
+      // Chromium may reject a second picker while a timed-out native dialog is still active.
+      // A null target safely selects the existing in-memory BufferTarget path.
+      if (cause instanceof DOMException && cause.name === "NotAllowedError")
+        return null;
+      throw cause;
     });
   // Some embedded browsers expose the API but do not surface its native dialog.
   // Do not block encoding forever in that case; the caller will use BufferTarget.
-  const timeout = new Promise<null>(resolve =>
-    window.setTimeout(() => resolve(null), 2500)
-  );
+  let timeoutId: number | undefined;
+  const timeout = new Promise<null>(resolve => {
+    timeoutId = window.setTimeout(() => resolve(null), 2500);
+  });
   const aborted = signal
     ? new Promise<null>(resolve =>
         signal.addEventListener("abort", () => resolve(null), { once: true })
       )
     : new Promise<null>(() => undefined);
-  const result = await Promise.race([pickerRequest, timeout, aborted]);
-  settled = true;
+  let result: FileWritable | null;
+  try {
+    result = await Promise.race([pickerRequest, timeout, aborted]);
+  } finally {
+    settled = true;
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
   return result;
 }
 

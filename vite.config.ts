@@ -193,6 +193,12 @@ export default defineConfig({
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),
+  // Whisper first imports Transformers.js from a module Worker. Pre-bundle it
+  // at server startup so Vite does not restart the page on the first analysis
+  // click and discard the in-memory source File before transcription begins.
+  optimizeDeps: {
+    include: ["@huggingface/transformers"],
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,

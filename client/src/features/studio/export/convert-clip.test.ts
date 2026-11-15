@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CAPTION_BACKGROUND,
   cropForPortrait,
@@ -6,12 +6,33 @@ import {
   normalizedFramingMode,
   outputDimensions,
   portraitCropQuality,
+  requestSaveTarget,
   videoBitrateForHeight,
 } from "./convert-clip";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("caption appearance", () => {
   it("keeps the caption background transparent for every editable style", () => {
     expect(CAPTION_BACKGROUND).toBe("transparent");
+  });
+});
+
+describe("save target fallback", () => {
+  it("uses the in-memory target when a previous native file picker is still active", async () => {
+    const picker = vi.fn().mockRejectedValue(
+      new DOMException("File picker already active.", "NotAllowedError")
+    );
+    vi.stubGlobal("window", {
+      showSaveFilePicker: picker,
+      setTimeout,
+      clearTimeout,
+    });
+
+    await expect(requestSaveTarget("clip.webm", "webm-vp9")).resolves.toBeNull();
+    expect(picker).toHaveBeenCalledTimes(1);
   });
 });
 
