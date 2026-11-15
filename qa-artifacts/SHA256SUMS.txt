@@ -1,0 +1,3 @@
+14d39d88cb775493551b1cdb97053fe97af68bff0b604a050a2986f475f82f13  qa-artifacts/buyer-final-edited-caption.mp4
+42aa9ac054d78e9f78c72d44da1f129357c85b67142c1d8333ddfe50b5684b31  qa-artifacts/edited-caption.ffprobe.json
+71c347cdf93746b2ab65d4a6c7db296a68436a1ca5916d62568edf2695986d70  qa-artifacts/edited-caption.webm
