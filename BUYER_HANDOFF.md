@@ -208,3 +208,8 @@ None of those items should be presented as already complete. The current deliver
 - The server shell has no production URL, managed account system, payment/subscription system, or automatically provisioned database.
 - The package declares MIT in `package.json`, but the repository does not currently include a standalone `LICENSE` file. Resolve ownership and licensing with the buyer before commercial redistribution.
 - Keep `THIRD_PARTY_NOTICES.md` and re-check upstream licenses/model terms before redistribution.
+
+
+## Final execution addendum — 2026-11-16
+
+This run is **PARTIAL**. Application commit `e1ac035a219243bc65c6dd2b4e2273d1edb7434e` removes the stale native File Picker timeout race and adds a regression test. The exact previous failure was `NotAllowedError: File picker already active.` A new real edited-caption export was independently verified as WebM VP9/Opus at 608×1080, with full FFmpeg decoding and a visible edited caption. The Sandbox browser could not expose a controllable OS save dialog, so native-path success and a complete buyer screen recording are not claimed. See `FINAL_DELIVERY_REPORT.md` and `FINAL_DELIVERY_REPORT_AR.md` for the exact evidence and limitations.
