@@ -1,0 +1,18 @@
+Expected SHA-256: 3397f97f879f94c83b764aeed916defb83113ce0b0e6994531b1be5989709f1f
+Downloaded source: /home/ubuntu/qa-artifacts/final-buyer-demo-2026-11-15/verified-source.webm
+9cddba5d7fb4f41d35d4e4d433172bfde8bde66832d190b7e10e2a3e1a7e6ef3  /home/ubuntu/qa-artifacts/final-buyer-demo-2026-11-15/verified-source.webm
+index=0
+codec_name=vp8
+codec_type=video
+width=1280
+height=720
+r_frame_rate=24000/1001
+index=1
+codec_name=vorbis
+codec_type=audio
+sample_rate=44100
+channels=2
+r_frame_rate=0/0
+duration=325.291000
+size=62831446
+Result: FAIL - downloaded/documented source hash does not match required expected hash; source not used.

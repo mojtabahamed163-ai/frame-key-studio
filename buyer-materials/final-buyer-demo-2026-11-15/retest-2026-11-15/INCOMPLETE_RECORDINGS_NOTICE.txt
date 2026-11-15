@@ -1,0 +1,1 @@
+The raw screen-recording MP4 files from this retest were not added because FFprobe reported `moov atom not found`; they were incomplete capture artifacts and are not valid final recordings.
