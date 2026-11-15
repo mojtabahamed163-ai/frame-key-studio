@@ -183,15 +183,16 @@ export async function supportedOutputFormat(
 
 export async function requestSaveTarget(
   name: string,
-  format: OutputFormat,
-  signal?: AbortSignal
+  format: OutputFormat
 ): Promise<FileWritable | null> {
   const picker = (window as SavePickerWindow).showSaveFilePicker;
   if (!picker) return null;
-  let settled = false;
-  let pickerPromise: ReturnType<typeof picker>;
+  let handle: OutputFileHandle;
   try {
-    pickerPromise = picker({
+    // Keep this call directly in the trusted click handler. Do not race it
+    // against a timeout: abandoning the promise leaves Chromium's picker
+    // active and the next export fails with "File picker already active".
+    handle = await picker({
       suggestedName: name,
       types: [
         {
@@ -209,43 +210,13 @@ export async function requestSaveTarget(
       return null;
     throw cause;
   }
-  const pickerRequest = pickerPromise
-    .then(handle => handle.createWritable())
-    .then(async writable => {
-      if (settled || signal?.aborted) {
-        await writable
-          .abort(new DOMException("Save cancelled.", "AbortError"))
-          .catch(() => undefined);
-        return null;
-      }
-      return writable;
-    })
-    .catch(cause => {
-      // Chromium may reject a second picker while a timed-out native dialog is still active.
-      // A null target safely selects the existing in-memory BufferTarget path.
-      if (cause instanceof DOMException && cause.name === "NotAllowedError")
-        return null;
-      throw cause;
-    });
-  // Some embedded browsers expose the API but do not surface its native dialog.
-  // Do not block encoding forever in that case; the caller will use BufferTarget.
-  let timeoutId: number | undefined;
-  const timeout = new Promise<null>(resolve => {
-    timeoutId = window.setTimeout(() => resolve(null), 2500);
-  });
-  const aborted = signal
-    ? new Promise<null>(resolve =>
-        signal.addEventListener("abort", () => resolve(null), { once: true })
-      )
-    : new Promise<null>(() => undefined);
-  let result: FileWritable | null;
   try {
-    result = await Promise.race([pickerRequest, timeout, aborted]);
-  } finally {
-    settled = true;
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    return await handle.createWritable();
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "NotAllowedError")
+      return null;
+    throw cause;
   }
-  return result;
 }
 
 function clamp(value: number, min: number, max: number): number {

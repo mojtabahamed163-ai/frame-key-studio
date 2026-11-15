@@ -34,6 +34,25 @@ describe("save target fallback", () => {
     await expect(requestSaveTarget("clip.webm", "webm-vp9")).resolves.toBeNull();
     expect(picker).toHaveBeenCalledTimes(1);
   });
+
+  it("waits for the native picker instead of abandoning an active request", async () => {
+    const writable = {
+      write: vi.fn(),
+      close: vi.fn(),
+      abort: vi.fn(),
+    };
+    const picker = vi.fn().mockResolvedValue({
+      createWritable: vi.fn().mockResolvedValue(writable),
+    });
+    vi.stubGlobal("window", {
+      showSaveFilePicker: picker,
+    });
+
+    await expect(requestSaveTarget("clip.webm", "webm-vp9")).resolves.toBe(
+      writable
+    );
+    expect(picker).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("video bitrate profile", () => {
