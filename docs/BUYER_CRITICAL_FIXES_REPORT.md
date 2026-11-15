@@ -1,57 +1,54 @@
 # Critical Fixes Report — Whisper and Final Export
 
-**Status:** Operational fixes verified locally in Chromium; changes remain uncommitted and unpushed. This is evidence for the tested environment, not a claim of cross-browser certification.
+**Fix commit:** `6a16b048625f87113edfcf1a77a869e227b41517` (`main`, pushed to `origin/main`). The final audit and evidence-packaging step did **not** rerun tests. This report documents the earlier operational verification and does not certify all browsers or devices.
 
 ## Starting revision and preserved work
 
 - Repository: `mojtabahamed163-ai/frame-key-studio`, branch `main`.
-- Starting `HEAD` and `origin/main`: `c1d3c29ffcbe2643a3ae5631dd8f0f5f26d2ed45` (`docs: add functional verification reports`).
-- Previously tested revision: `442f5c6290b92e65112ae150b758f060617c97b4`; the branch recorded after that test was `59f7083e3e6e6cc00c63e03598015eb77ccb2b50`.
-- The diff from the previously tested revision to the starting `main` added four documentation files only: `BUYER_TECHNICAL_OVERVIEW.md`, `BUYER_TECHNICAL_OVERVIEW_AR.md`, and the English/Arabic functional-verification reports. They were preserved and not overwritten or deleted.
-- The earlier QA report recorded Whisper as failed after about 601 seconds and 30-second/5-second exports as cancelled. Its browser evidence did not include a stack trace identifying the precise thrown exception for that historical cancellation.
+- The fix work started from `c1d3c29ffcbe2643a3ae5631dd8f0f5f26d2ed45`.
+- The prior functional verification tested `442f5c6290b92e65112ae150b758f060617c97b4`; the earlier report recorded a later main revision at `59f7083e3e6e6cc00c63e03598015eb77ccb2b50`.
+- The four pre-existing buyer documents were preserved. The fix commit changes only the Vite config, two focused tests, the export helper, and these two fix reports.
+- The earlier operational report recorded Whisper as failed after about 601 seconds and 30-second/5-second exports as cancelled. That historical export evidence did not contain a stack trace identifying the exact exception behind the generic cancellation notice.
 
 ## Whisper diagnosis, fix, and real run
 
-The failure was traced to the development-server dependency optimizer, not to a replacement or failure of the speech model. The first module-Worker import of `@huggingface/transformers` could trigger Vite dependency re-optimization/page reload during the first Analyze action. Studio's unmount cleanup aborts the in-flight analysis, and the in-memory `File`/Worker session is lost before results reach the page. That matches the observed first-run page reset and absence of a Worker error/result. The fix pre-bundles `@huggingface/transformers` at Vite startup via `optimizeDeps.include`, so the first analysis does not trigger that optimizer restart. A regression test protects the setting.
+A leading explanation for the earlier Whisper failure is Vite's dependency optimizer reacting to the first module-Worker import of `@huggingface/transformers`. Operational observations included the first analysis attempt returning the UI to its source state without a Worker result/error and a later successful run after pre-bundling the dependency. Such a development-server optimization can trigger a page reload, which would discard the in-memory analysis session. **This remains the probable explanation, not a conclusively demonstrated causal chain:** the preserved evidence does not include a direct Vite optimizer log linking optimizer restart, page unmount, controller abort, and loss of the source `File`. The regression test checks the configuration, not the page-reload sequence.
 
-No model, audio-processing, or transcription algorithm was substituted. The actual English model remains `Xenova/whisper-base.en` (`q8`) in the local Transformers.js Worker. On the real 6:54.502 Wikimedia video, the Worker reported model-ready, streamed results through completion, and recorded **zero Worker error events**. The UI displayed **625 timed words** and **3 clip suggestions**; all three were marked for transcript review. The result stream ran from 00:58:14.204Z to 00:59:58.598Z (about **104.4 seconds**); the last result was 107.8 seconds after the recorded model-ready event. Exact click-to-finish time was not present in the saved summary.
+The implemented mitigation adds `@huggingface/transformers` to Vite's `optimizeDeps.include`, so it is prepared before the first analysis interaction. No model, audio-processing, or transcription algorithm was substituted. In the previously completed real run, the English model was `Xenova/whisper-base.en` (`q8`) in the local Transformers.js Worker. It reached model-ready, emitted results through completion, and recorded **zero Worker error events**. The UI showed **625 timed words** and **3 clip suggestions**; all three were flagged for transcript review. The result stream ran from 00:58:14.204Z to 00:59:58.598Z (about **104.4 seconds**); the final result was 107.8 seconds after the recorded model-ready event. Exact click-to-completion time was not captured.
 
-The UI also reported review warnings for timestamps outside the decoded audio window, one implausibly long word timestamp excluded from review, and an overlap disagreement near a chunk boundary. These are visible review warnings, not Worker errors or hidden failures.
-
-Files changed for this fix: `vite.config.ts` and the new `client/src/features/studio/workers/transcribe-vite-optimization.test.ts`. `transcribe.worker.ts` and the local model pipeline were not changed.
+The saved UI/Worker evidence includes warnings for timestamps outside the decoded audio window, an implausibly long word timestamp excluded from review, and disagreement near a chunk-overlap boundary. These remain review warnings. Only the English `whisper-base.en` path is claimed as tested here; no successful `whisper-tiny` multilingual run is claimed.
 
 ## Export diagnosis, fix, and real runs
 
-A separate failure was reproduced with live instrumentation. `requestSaveTarget()` races `showSaveFilePicker()` against a 2.5-second timeout. In this embedded browser, the timeout allowed the first export to use the existing in-memory `BufferTarget`, but it did not dismiss/cancel the pending native picker request. The next export was then rejected before `Conversion.init` with `NotAllowedError: Failed to execute 'showSaveFilePicker' on 'Window': File picker already active.` This is the confirmed, reproducible cause of the blocked repeated export in this environment.
+Live browser instrumentation reproduced a repeated-export failure. `requestSaveTarget()` races `showSaveFilePicker()` against a 2.5-second timeout. After the first export fell back to the in-memory `BufferTarget`, the native picker request remained active. A subsequent request was rejected before `Conversion.init` with `NotAllowedError: ... File picker already active.` This repeated-picker blocker was directly observed in the tested embedded Chromium session.
 
-The fix treats a synchronous or asynchronous picker `NotAllowedError` as “no direct file target” and continues with the existing in-memory export path; it also clears the timeout once the race settles. This preserves the actual encoder, audio, resolution, and output quality. A regression test asserts that an already-active picker falls back to the buffer target. After the fix, the same 30-second clip exported successfully despite the still-active picker: `Conversion.init` was valid with no discarded tracks, `Conversion.execute` finalized, and `BufferTarget` contained **16,385,100 bytes**.
+The fix treats synchronous or asynchronous picker `NotAllowedError` as the absence of a direct file target and proceeds through the existing `BufferTarget` path; it also clears the timeout when the race settles. The encoder and selected media settings were not replaced. The regression test simulates the active-picker rejection and verifies a `null` target so the caller can use the in-memory path. On the successful 30-second retry, the saved trace recorded valid `Conversion.init`, no discarded tracks, finalized `Conversion.execute`, and **16,385,100 output bytes**.
 
-**Historical-message caveat:** the earlier generic UI text `Export cancelled. No incomplete file was added to the results.` maps multiple abort paths. The old evidence did not record the exception/stage, so it is not possible to prove that the historical message was this exact `NotAllowedError`. The current repeated-picker failure was directly reproduced and fixed; the reports do not retroactively claim more than the evidence proves.
+**Historical-message caveat:** the earlier UI message `Export cancelled. No incomplete file was added to the results.` maps multiple abort paths. The old evidence did not record its originating exception/stage, so this report does not claim that the old notice was definitively caused by the later reproduced `NotAllowedError`.
 
 ## Integrated workflow and verified outputs
 
-The previous task’s source file was unavailable at its old path, so the same Wikimedia Commons media was downloaded again. Its SHA-256 matches the previous functional report. Commons identifies author/attribution as **ITU** and the license as **CC BY 3.0**. The tests used real speech, not generated media, a prepared transcript, or a paid inference service. The browser processed the media locally.
+The same Wikimedia Commons source item was used for the new run; its SHA-256 matches the previous functional report. The source is the H. E. Mr Baron Waqa speech at the Connect Asia-Pacific 2013 Summit. Commons identifies **ITU** as attribution and **CC BY 3.0** as the license. The [Wikimedia Commons source page](https://commons.wikimedia.org/wiki/File:HE_Mr_Baron_Waqa,_MP_President,_Nauru_%28Republic_of%29_-_speech_at_Connect_Asia-Pacific_2013_Summit.webm) and license record are included in the evidence package. The original source video (71,813,058 bytes) is not included in that package; its metadata, license record, and SHA-256 are included so the public source can be retrieved and identified.
 
-The actual Whisper text was used to run local English→Arabic OPUS-MT (`onnx-community/opus-mt-en-ar`): ten phrase-timed Arabic lines appeared in the UI. The phrases are machine-generated and require human review; the UI correctly describes timing as phrase-level, not word-level. Face tracking was run on the real 5-second selection; the preview showed `FRAME LEFT`, and the resulting file is portrait. The 30-second clip was subsequently extended, which invalidated the earlier clip-bound keyframes; its verified output therefore uses centered 9:16 framing, not a claim of face tracking across all 30 seconds.
+The actual Whisper result was passed to local English→Arabic OPUS-MT (`onnx-community/opus-mt-en-ar`), producing ten phrase-timed Arabic lines. The output is machine-generated and requires human review; it is not word-aligned. Face tracking was run on the real 5-second selection; the preview showed `FRAME LEFT`. The later 30-second selection used centered 9:16 framing after the earlier clip-bound keyframes were invalidated; no face-tracking success across all 30 seconds is claimed.
 
-Both exports were initiated in the real `/studio` UI, downloaded from its Save file control, then independently probed and fully decoded with FFmpeg:
+Both exports were initiated in the real `/studio` UI, saved, independently probed, and fully decoded with FFmpeg in the earlier verification run:
 
-| Output | Size | Container / codecs | Duration | Video | Audio | SHA-256 |
+| Output in the evidence package | Size | Container / codecs | Duration | Video | Audio | SHA-256 |
 |---|---:|---|---:|---|---|---|
-| [5-second WebM](/home/ubuntu/qa-artifacts/task5-2026-11-15/outputs/clip-05s.webm) | 3,056,331 B | WebM / VP9 + Opus | 5.029 s | 608×1080, 30 fps, 150 frames | 48 kHz, stereo | `90acd3e3f544feab44f6dbcfbd8bcd9237b35b24f147cad1bccb2f08652e1dd1` |
-| [30-second WebM](/home/ubuntu/qa-artifacts/task5-2026-11-15/outputs/clip-30s.webm) | 16,385,100 B | WebM / VP9 + Opus | 30.029 s | 608×1080, 30 fps, 900 frames | 48 kHz, stereo | `064205c933a5cca5418a55a0a0ea9992a063a787236f64dcfbb4aa2d8e89b61b` |
+| `export/outputs/clip-05s.webm` | 3,056,331 B | WebM / VP9 + Opus | 5.029 s | 608×1080, 30 fps, 150 frames | 48 kHz, stereo | `90acd3e3f544feab44f6dbcfbd8bcd9237b35b24f147cad1bccb2f08652e1dd1` |
+| `export/outputs/clip-30s.webm` | 16,385,100 B | WebM / VP9 + Opus | 30.029 s | 608×1080, 30 fps, 900 frames | 48 kHz, stereo | `064205c933a5cca5418a55a0a0ea9992a063a787236f64dcfbb4aa2d8e89b61b` |
 
-FFmpeg full-decode checks completed without errors. Extracted frames at 2s and 27s visibly show the portrait image and burned-in Arabic captions. Only WebM was tested; no MP4 success is claimed.
+The package includes the prior `ffprobe` records, frame-count/video-check JSON, SHA-256 records, UI screenshots, and extracted frames at 2s and 27s. Those frames visibly show the portrait output and burned-in Arabic captions. **Only WebM was tested; MP4 is not tested or claimed.**
 
-## Automated checks and modified files
+## Previously completed checks and repository record
 
-- `pnpm exec vitest run client/src/features/studio/media/analyze-video.test.ts client/src/features/studio/export/convert-clip.test.ts client/src/features/studio/workers/transcribe-vite-optimization.test.ts` — **26 tests passed** across 3 files.
-- `pnpm check` — passed.
-- `pnpm build` — passed. Vite emitted non-fatal warnings about `/api/platform/config.js` lacking `type="module"` and large chunks; the build completed.
-- `git diff --check` — passed.
+The implementation checks were run before the final audit: the focused Vitest command passed **26 tests across 3 files**, `pnpm check` passed, and `pnpm build` passed with non-fatal Vite warnings about `/api/platform/config.js` lacking `type="module"` and large chunks. `git diff --check` also passed at that time. **None of these tests/checks was rerun during the final audit or evidence packaging.**
 
-Modified/added code files: `vite.config.ts`, `client/src/features/studio/workers/transcribe-vite-optimization.test.ts`, `client/src/features/studio/export/convert-clip.ts`, and `client/src/features/studio/export/convert-clip.test.ts`. The two reports are new files; prior buyer documentation remains intact. No commit or push was performed.
+The implementation and original versions of these reports are recorded in commit `6a16b048625f87113edfcf1a77a869e227b41517`, pushed to `origin/main`. The four earlier buyer documents remain unchanged. The evidence archive is delivered separately rather than added to GitHub because it contains real video outputs.
 
-## Evidence location and limits
+## Portable evidence package and limits
 
-Evidence is kept outside Git at `/home/ubuntu/qa-artifacts/task5-2026-11-15/`; see its `README.md` for the source fingerprint/license, Worker summary, before/after screenshots, console trace, output metadata, hashes, and extracted frames. This run proves local Whisper transcription and two valid WebM exports in this Chromium environment. It does not certify other browsers, test MP4, guarantee transcript/translation accuracy, or prove the exact exception behind the historical generic cancellation message.
+The accompanying archive is named `frame-key-studio-evidence-2026-11-15.zip`. Its root `README.md` lists the relative directory structure, explains the verification commands and license, and states what is omitted. It contains the saved Whisper summary and UI/DOM captures, Arabic translation evidence, picker/export screenshots and console summary, both actual WebM outputs, their metadata/hashes/video checks, and extracted captioned frames. The source-video bytes and a full screen-recording of the successful current workflow are not included; the source file is identified by its public Commons page, source SHA-256, ffprobe metadata, and license record, and no full recording was available in this evidence set.
+
+The archive is provided alongside this report; it is not a GitHub-hosted artifact. This run documents local processing in the tested Chromium environment only. It does not certify other browsers, establish MP4 export, guarantee transcript/translation accuracy, or prove the exact exception behind the historical generic cancellation notice.
