@@ -4,7 +4,7 @@
 **Buyer:** Clinton Beiter — RETIEB Labs LLC  
 **Repository:** https://github.com/mojtabahamed163-ai/frame-key-studio  
 **Branch:** `buyer-delivery-2026-11-16`  
-**Package commit:** `26fc9bcfcc15835c3970349c35c051391d7a41bf`
+**Package commit:** `9405355519cb3376230f6482316c2a3b9cdbeabe`
 
 The branch tip contains the recovered Spanish export and its verification evidence.
 
