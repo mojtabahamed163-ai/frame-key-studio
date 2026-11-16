@@ -52,7 +52,7 @@ Run on 2026-11-16 after `pnpm install --frozen-lockfile`:
 - `pnpm check`: **PASS**
 - `pnpm test -- --run`: **PASS — 21 test files, 140 tests**
 - `pnpm build`: **PASS**; non-fatal Vite warning about the platform config script and large chunks was emitted
-- `git diff --check`: to be run before final commit
+- `git diff --check`: **PASS**
 
 ## Exact locations and download links
 
