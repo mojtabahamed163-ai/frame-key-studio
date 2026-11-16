@@ -15,9 +15,9 @@
 ## Planned stages
 
 1. Preflight and preserve existing delivery files — complete.
-2. Record one continuous real Playwright browser session at 1920×1080 with a clearly visible in-page cursor overlay and click indicators — in progress; attempt 1 reached real import, transcription, suggestions, and editor, then stopped on an automation selector error.
+2. Record one continuous real Playwright browser session at 1920×1080 with a clearly visible in-page cursor overlay and click indicators — in progress; attempt 1 reached real import, transcription, suggestions, and editor, then stopped on an automation selector error; attempt 2 reached the real caption textarea but its automated typing verification did not persist the value.
 3. Verify the actual UI results; stop and document any failed required feature rather than fabricating it — pending.
 4. Convert the same WebM recording to silent MP4 at 1920×1080 and 25 fps — pending.
 5. Verify the MP4 with ffprobe/full decode, write the ordered interaction log, update buyer delivery documentation, commit, and push — pending.
 
-Attempt 1 evidence is preserved at `BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-16/attempt-1-caption-selector-failure.webm`; it is not a final deliverable. The stop was caused by the recording script looking for an aria-label that the real caption textarea does not expose. The in-page cursor overlay is explicitly a recording aid inside the web page, not a claim about the operating-system cursor. No artificial audio or narration will be added.
+Attempt 1 evidence is preserved at `BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-16/attempt-1-caption-selector-failure.webm`; attempt 2 is preserved at `BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-16/attempt-2-caption-save-failure.webm`. Neither is a final deliverable. Attempt 1 stopped because the recording script looked for an aria-label that the real caption textarea does not expose. Attempt 2 stopped because the scripted typing/check did not persist the edit in the live React control; no translation or export was claimed. The in-page cursor overlay is explicitly a recording aid inside the web page, not a claim about the operating-system cursor. No artificial audio or narration will be added.
