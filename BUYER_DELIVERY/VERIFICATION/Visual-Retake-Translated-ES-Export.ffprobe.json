@@ -1,0 +1,33 @@
+{
+    "programs": [
+
+    ],
+    "streams": [
+        {
+            "index": 0,
+            "codec_name": "vp9",
+            "codec_type": "video",
+            "width": 608,
+            "height": 1080,
+            "pix_fmt": "yuv420p",
+            "r_frame_rate": "30/1",
+            "avg_frame_rate": "30/1"
+        },
+        {
+            "index": 1,
+            "codec_name": "opus",
+            "codec_type": "audio",
+            "sample_rate": "48000",
+            "channels": 2,
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0"
+        }
+    ],
+    "format": {
+        "filename": "BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Visual-Retake.webm",
+        "format_name": "matroska,webm",
+        "duration": "28.989000",
+        "size": "15976653",
+        "bit_rate": "4409024"
+    }
+}

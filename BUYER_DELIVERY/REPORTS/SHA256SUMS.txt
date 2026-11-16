@@ -6,3 +6,9 @@ bdc0876d4360c6d2f952cf036ff5a8c1a0ea7b4bcf27bdfff4a540a4f2e4b12d  DEMO/Original-
 0665533041414cc884c5e4f0e8774b69c91e837962c18edfcf5242388359016b  EXPORTS/Verified-Bilingual-Arabic-Export.webm
 3397f97f879f94c83b764aeed916defb83113ce0b0e6994531b1be5989709f1f  SOURCE/Frame-and-Key-Studio-Original-Source.webm
 b0484c89a8b6b183950a16d88e5297d92d53a15aaaea20c6eae7a6244c640bc1  EXPORTS/Frame_and_Key_Studio_Translated_ES_Export.webm
+
+69c2906303d5ec4630987b9583cd14ec36ed73f4da68e19a31f0849af78c6120  DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4
+2caad9b7275618a53c5cb9bbf28b17816ac454d0e8844d1c18c41f72c4d4868b  DEMO/Visual-Retake/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4
+0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export.webm
+0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Retake.webm
+0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Visual-Retake.webm

@@ -2,7 +2,7 @@
 
 **Prepared for:** Clinton Beiter — RETIEB Labs LLC  
 **Repository:** https://github.com/mojtabahamed163-ai/frame-key-studio  
-**Delivery status:** **PARTIAL — honest evidence package; not a complete final acceptance package**
+**Delivery status:** **PASS for the new continuous buyer demonstration; the distinct historical 70-second recording remains unavailable**
 
 ## What the product does
 
@@ -32,13 +32,13 @@ The core Studio is local browser software. Selected video/audio bytes, frames, t
 
 ## What is included
 
-The repository includes the React/TypeScript/Vite client, the local Studio implementation, browser workers, export code, tests, server shell, configuration examples, prior QA reports, and the `BUYER_DELIVERY/` evidence package. The package preserves genuine source media, genuine screen recordings, historical export evidence, independent media checks, and explicit missing-artifact notices.
+The repository includes the React/TypeScript/Vite client, the local Studio implementation, browser workers, export code, tests, server shell, configuration examples, prior QA reports, and the `BUYER_DELIVERY/` evidence package. The package preserves genuine source media, historical evidence, two new continuous end-to-end browser recordings, actual app-generated Spanish exports, independent media checks, and explicit notices for genuinely missing historical artifacts.
 
 ## What the buyer receives in this package
 
-The package contains a genuine 6:54 source WebM, two preserved screen-recording artifacts measured at 2:15.520 and 2:22.960, an edited 2:24.533 buyer-demo MP4, verified source-language, bilingual Arabic, and recreated Spanish exports, reports, checksums, decoded inspection frames, and installation/handoff documentation.
+The package includes the genuine 6:54.502 source WebM; preserved 2:15.520 and 2:22.960 screen recordings; the prior edited buyer-demo MP4; a root-level 5:00.920 continuous demo; the recommended visual retake at 5:13.040; verified source-language and bilingual Arabic WebM exports; the existing Spanish export; and newly rendered Spanish WebM exports from the real Studio workflow. The preferred retake is 1920×1080/25 fps H.264, silent, and its representative middle frame shows the Spanish `Sin embargo,` subtitle visibly in the 9:16 portrait preview. The final Spanish clip export is 28.989 seconds at 608×1080, not a full-length source export.
 
-The requested original 70-second recording and a new 5–8 minute continuous recording remain missing. The application-generated Spanish WebM was recreated from the preserved source through the real Studio workflow and independently verified; it is a selected 28.989-second clip with 110 translated caption lines, not a full-length source export. No other language export is mislabeled as Spanish.
+The original historical 70-second recording was not found and is not claimed to be recovered. The new continuous demonstration is a separate deliverable. No other language export is mislabeled as Spanish.
 
 ## Production work still necessary
 

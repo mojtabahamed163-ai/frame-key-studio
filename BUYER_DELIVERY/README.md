@@ -1,12 +1,12 @@
 # Frame & Key Studio — Buyer Delivery Package
 
-This directory is an **honest, independently checked partial buyer package**. It preserves existing evidence, documents the recovered Spanish export, and does not relabel historical exports or missing recordings.
+This is an independently checked buyer package that preserves existing evidence, documents the recovered Spanish export, and distinguishes new recordings from missing historical artifacts.
 
-- `DEMO/` — genuine screen recordings and explicit missing-artifact notices.
-- `EXPORTS/` — verified historical source-language and bilingual Arabic WebM exports plus a Spanish WebM recreated through the real local Studio workflow.
-- `SOURCE/` — genuine source WebM used by prior buyer evidence.
-- `REPORTS/` — final status, feature matrix, limitations, probe output, hashes, and demo verification.
+- `DEMO/` — preserved genuine recordings, the root-level 5-minute buyer demo, and the preferred visual retake under `Visual-Retake/`.
+- `EXPORTS/` — verified historical source-language and bilingual Arabic WebM exports plus Spanish WebM exports created through the real local Studio workflow.
+- `SOURCE/` — genuine source WebM used for the demonstrations.
+- `REPORTS/` — final status, feature matrix, limitations, FFprobe output, hashes, and demo verification.
 - `DOCUMENTATION/` — buyer overview, architecture, installation, and handoff.
-- `VERIFICATION/` — full-decode logs and representative frames.
+- `VERIFICATION/` — full-decode logs, FFprobe JSON, and representative frames.
 
-The package remains **PARTIAL** for the requested mission because the original 70-second recording and new 5–8 minute continuous recording are missing. The Spanish export is present and verified, but it is a selected 28.989-second clip rather than a full-length source export.
+**The new 5–8 minute continuous buyer demonstration is produced and verified.** The preferred visual retake is 313.040 seconds (5:13.040), H.264, 1920×1080 at 25 fps, video-only/silent, and shows the English-to-Spanish workflow with `Sin embargo,` visibly over the portrait preview. The original historical 70-second recording remains unavailable and is accurately marked in `DEMO/70-Second-Recording.NOT_FOUND.txt`; it is distinct from the new demonstration. The Spanish export is a selected 28.989-second clip, not a full-length source export.

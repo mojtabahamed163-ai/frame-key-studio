@@ -2,14 +2,24 @@
 
 Date: 2026-11-16
 
-All media present in `DEMO/`, `EXPORTS/`, and `SOURCE/` was checked with `ffprobe`, full video decode through FFmpeg, representative-frame extraction, and SHA-256 calculation. Raw command output is in `FFPROBE_REPORT.txt`; hashes are in `SHA256SUMS.txt`; per-file decode stderr files and PNG frames are under `../VERIFICATION/`.
+All previously supplied media measurements remain preserved in `REPORTS/FFPROBE_REPORT.txt`, hashes remain in `REPORTS/SHA256SUMS.txt`, and older decode/frame evidence remains in `../VERIFICATION/`. New measurements and frame evidence for this delivery are appended below and in the same verification directory.
 
-The 2:15.520 WebM and 2:22.960 WebM are valid video-only screen recordings. The edited buyer-demo MP4 is valid video-only H.264. The original source is a valid 6:54.502 WebM with VP8/Vorbis. The source-language-caption export, bilingual Arabic export, and newly recreated Spanish export are valid portrait WebM files. The Spanish inspection frame visibly contains the English source caption `However,` and the translated caption `Sin embargo,`.
+## New continuous buyer demonstrations
 
-The Spanish export was recreated through the real local Studio workflow from the preserved source: Whisper produced 625 timed words, local OPUS-MT English→Spanish completed for 110 timed caption lines, and the selected 28.989-second clip was rendered and downloaded from the browser. It is independently verified below with FFprobe, FFmpeg decode, SHA-256, and an extracted frame.
+The root-level recording `DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4` is 300.920 seconds (5:00.920), H.264/yuv420p, 1920×1080 at 25 fps, 18,823,088 bytes. FFprobe reports a single video stream and no audio stream; full FFmpeg decode returned exit code 0. Its SHA-256 is `69c2906303d5ec4630987b9583cd14ec36ed73f4da68e19a31f0849af78c6120`.
 
-Audio limitation: the screen recordings and edited screen-demo MP4 have no audio stream. The source and historical application exports do contain audio where reported by FFprobe. The screen recording should therefore be described as silent.
+The visually verified, buyer-preferred retake `DEMO/Visual-Retake/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4` is 313.040 seconds (5:13.040), H.264/yuv420p, 1920×1080 at 25 fps, 19,570,523 bytes. FFprobe reports a single video stream and no audio stream; full FFmpeg decode returned exit code 0. Its SHA-256 is `2caad9b7275618a53c5cb9bbf28b17816ac454d0e8844d1c18c41f72c4d4868b`.
 
-===== Spanish export visual verification =====
-file=BUYER_DELIVERY/VERIFICATION/frames/Frame_and_Key_Studio_Translated_ES_Export.png
-observation=Extracted frame visibly shows source caption "However," and Spanish caption "Sin embargo,".
+Both recordings are one continuous capture of the actual local Studio application in Chromium. They show import of the preserved 6:54 source, duration/resolution, the local Whisper run (625 timed words), transcript and generated suggestions, opening a suggested clip, a 9:16 portrait editor, a caption edit, navigation away and reopening with the edit preserved, English speech and Spanish target settings, local translation, and the application-generated export. The preferred retake additionally keeps the portrait preview visible on screen when `Sin embargo,` is shown. Its representative start, middle, and end frames are `VERIFICATION/frames/Visual-Retake/start.png`, `middle.png`, and `end.png`; the middle frame visibly shows the translated phrase over the 9:16 canvas, and the end frame shows the exported WebM's local path in Chromium.
+
+The new application export is a selected 28.989-second WebM at 608×1080/30 fps, VP9 video + Opus stereo 48 kHz, 15,976,653 bytes. FFmpeg full decode returned exit code 0. The extracted `VERIFICATION/frames/Visual-Retake/export-spanish-caption.png` visibly shows the Spanish caption `Sin embargo,` in the exported clip. The files named `Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export.webm`, `...-Export-Retake.webm`, and `...-Export-Visual-Retake.webm` are byte-identical app-generated exports with the same SHA-256.
+
+The original source remains `SOURCE/Frame-and-Key-Studio-Original-Source.webm`: 414.502 seconds (6:54.502), 1920×1080/25 fps, VP8 video + Vorbis stereo audio. The prior source-language-caption export, bilingual Arabic export, and Spanish export are also retained and independently checked; the historical Spanish inspection frame visibly contains English `However,` with Spanish `Sin embargo,` below it.
+
+## Audio limitation
+
+The source and historical/new application exports carry audio where FFprobe reports it, but the two new screen-recording MP4s are video-only and silent. No usable system-audio capture device was available in the sandbox, so no narration or fabricated audio was added.
+
+## Historical recording status
+
+The requested original 70-second screen recording was not found in the repository, Git history, or inspected sandbox filesystem. `DEMO/70-Second-Recording.NOT_FOUND.txt` remains in place. Neither new recording is labeled as that original file. The earlier genuine 2:15.520 and 2:22.960 screen recordings and the edited historical buyer-demo MP4 remain preserved; the edited MP4 is not presented as an application export.

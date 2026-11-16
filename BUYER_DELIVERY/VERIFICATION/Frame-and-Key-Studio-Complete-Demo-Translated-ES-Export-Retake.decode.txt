@@ -1,0 +1,16 @@
+Input #0, matroska,webm, from 'BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Retake.webm':
+  Metadata:
+    encoder         : Mediabunny v1.61.4
+  Duration: 00:00:28.99, start: 0.000000, bitrate: 4409 kb/s
+  Stream #0:0: Video: vp9 (Profile 0), yuv420p(pc, bt709/bt709/iec61966-2-1), 608x1080, SAR 1:1 DAR 76:135, 30 fps, 30 tbr, 1k tbn (default)
+  Stream #0:1: Audio: opus, 48000 Hz, stereo, fltp (default)
+Stream mapping:
+  Stream #0:0 -> #0:0 (vp9 (native) -> wrapped_avframe (native))
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf60.16.100
+  Stream #0:0: Video: wrapped_avframe, yuv420p(pc, bt709/bt709/iec61966-2-1, progressive), 608x1080 [SAR 1:1 DAR 76:135], q=2-31, 200 kb/s, 30 fps, 30 tbn (default)
+    Metadata:
+      encoder         : Lavc60.31.102 wrapped_avframe
+frame=    0 fps=0.0 q=-0.0 size=       0kB time=00:00:00.00 bitrate=N/A speed=   0x    frame=  767 fps=0.0 q=-0.0 size=N/A time=00:00:25.56 bitrate=N/A speed=50.9x    [out#0/null @ 0x5644155b8400] video:407kB audio:0kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown
+frame=  869 fps=0.0 q=-0.0 Lsize=N/A time=00:00:28.93 bitrate=N/A speed=  51x
