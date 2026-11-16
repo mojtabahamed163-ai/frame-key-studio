@@ -4,7 +4,9 @@
 **Buyer:** Clinton Beiter — RETIEB Labs LLC  
 **Repository:** https://github.com/mojtabahamed163-ai/frame-key-studio  
 **Branch:** `buyer-delivery-2026-11-16`  
-**Commit:** `3e032fba9eaa8dc3ab7f4a3272fd52ef244f6c33` (will be amended once with this report update)
+**Package commit:** `8185d97a722796779cc1cc879a44be8a90b295f3`
+
+The branch tip also contains the final metadata correction to this report.
 
 ## Executive decision
 
@@ -66,7 +68,7 @@ Expected raw links for the files that exist:
 - Source-language export: `https://github.com/mojtabahamed163-ai/frame-key-studio/raw/buyer-delivery-2026-11-16/BUYER_DELIVERY/EXPORTS/Original-Source-Language-Export.webm`
 - Verified bilingual Arabic export: `https://github.com/mojtabahamed163-ai/frame-key-studio/raw/buyer-delivery-2026-11-16/BUYER_DELIVERY/EXPORTS/Verified-Bilingual-Arabic-Export.webm`
 
-The unavailable deliverables have explicit `.NOT_FOUND.txt` or `.NOT_PRODUCED.txt` markers in the package. The final remote branch and commit must be checked by the caller after push.
+The unavailable deliverables have explicit `.NOT_FOUND.txt` or `.NOT_PRODUCED.txt` markers in the package. The branch was pushed successfully; the final branch tip is reported in the delivery response and can be checked with `git ls-remote`.
 
 ## Remaining blocker
 
