@@ -13,3 +13,7 @@ Public viewing URL for ChatGPT or a reviewer:
 This URL points to the same 456.040-second, silent 1920×1080/25 fps Playwright recording preserved in the repository. It is evidence of the real workflow up to the export timeout, not a successful final buyer demo.
 
 Existing demo videos and buyer delivery files were preserved. No application source, logic, or design files were modified. No artificial audio, narration, fabricated cursor path, fabricated click, or fabricated export result was added.
+
+## Export investigation
+
+A targeted export-only investigation found that direct `showSaveFilePicker` export is cancelled before `exportClip` starts in Chromium headless/Playwright. The existing ZIP path completes the same real WebM conversion successfully without application changes. See [the technical investigation report](EXPORT_TIMEOUT_INVESTIGATION_2026-11-16_AR.md).

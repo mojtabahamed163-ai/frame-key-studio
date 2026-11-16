@@ -1,0 +1,77 @@
+Frame & Key
+LOCAL EDIT STUDIO
+Back to service page
+
+THE WORKSPACE / 01
+
+Make the useful
+moments move.
+
+Find clear moments in a long recording, shape them into vertical clips, then keep every decision in your hands.
+
+Your media stays on this device.
+
+Video and audio are processed in your browser. Public model files download only when you choose to use them.
+
+Add source
+Pick moments
+Refine edit
+04
+Export
+Export cancelled. No incomplete file was added to the results.
+
+04 / DELIVERY
+
+Export on your terms.
+
+Use direct-to-file saving for longer exports, or a memory-limited ZIP for small batches.
+
+Local save ready
+07
+
+CLIP QUEUE
+
+Choose what to render.
+Select all
+01
+Property cut 1
+0:00 — 0:05 · 5 sec
+Cancelled
+Edit
+TARGET
+General vertical
+TikTok
+Instagram Reels
+YouTube Shorts
+9:16 OUTPUT
+608 × 1080 · 30 fps
+FORMAT
+WebM
+MEDIA
+Local device only
+
+The selected framing and quality profile are encoded into the file; 9:16 output cannot restore detail removed by a crop.
+
+Export selected clip
+Render selected + ZIP
+
+Export is a local browser operation. The video, captions and model inputs are not sent to Frame & Key’s lead form, cloud storage or a paid AI service.
+
+LOCAL PREVIEW
+9:16 / PORTRAIT
+F&K / CUT
+Property cut 1
+0:00 — 0:05
+CENTER FRAME
+Long clip?
+
+On browsers with direct file saving, each export streams to the chosen file. Without that API, the editor limits in-memory exports and ZIP batches to protect device memory.
+
+No server upload
+Back to editing
+FRAME & KEY / LOCAL STUDIO
+
+Open source tools. No media uploads. No payment system.
+
+Back to Frame & Key
+Model and open-source credits
