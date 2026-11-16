@@ -6,6 +6,12 @@ All previously supplied media measurements remain preserved in `REPORTS/FFPROBE_
 
 ## New continuous buyer demonstrations
 
+## Cursor-visibility enhancement
+
+`DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo-Cursor-Enhanced.mp4` is H.264, 1920×1080 at 25 fps, 300.920 seconds, video-only/silent. Full FFmpeg decode completed successfully. A small halo emphasizes the pointer visible in the source, and five brief callouts align to visible UI-state changes. The capture does not provide reliable cursor movement/click telemetry, so no unsupported movement or exact click location is represented. See `REPORTS/CURSOR_ENHANCEMENT_NOTES.md` for timestamps and scope.
+
+The original MP4 remains unchanged at `DEMO/Backup/Original-Complete-Buyer-Demo-UNCHANGED.mp4`; its SHA-256 matches the source MP4: `69c2906303d5ec4630987b9583cd14ec36ed73f4da68e19a31f0849af78c6120`. The enhanced output SHA-256 is `f06fb41cefa8c31d32e65f52b909179179a063a5f2944f22562be09450080d4c`.
+
 The root-level recording `DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4` is 300.920 seconds (5:00.920), H.264/yuv420p, 1920×1080 at 25 fps, 18,823,088 bytes. FFprobe reports a single video stream and no audio stream; full FFmpeg decode returned exit code 0. Its SHA-256 is `69c2906303d5ec4630987b9583cd14ec36ed73f4da68e19a31f0849af78c6120`.
 
 The visually verified, buyer-preferred retake `DEMO/Visual-Retake/Frame-and-Key-Studio-Complete-Buyer-Demo.mp4` is 313.040 seconds (5:13.040), H.264/yuv420p, 1920×1080 at 25 fps, 19,570,523 bytes. FFprobe reports a single video stream and no audio stream; full FFmpeg decode returned exit code 0. Its SHA-256 is `2caad9b7275618a53c5cb9bbf28b17816ac454d0e8844d1c18c41f72c4d4868b`.

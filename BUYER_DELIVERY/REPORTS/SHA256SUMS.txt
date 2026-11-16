@@ -12,3 +12,5 @@ b0484c89a8b6b183950a16d88e5297d92d53a15aaaea20c6eae7a6244c640bc1  EXPORTS/Frame_
 0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export.webm
 0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Retake.webm
 0d93e92ad7726b763a2347e512b081f4bc354eaca9a471727d7c7c7505e35cad  EXPORTS/Frame-and-Key-Studio-Complete-Demo-Translated-ES-Export-Visual-Retake.webm
+f06fb41cefa8c31d32e65f52b909179179a063a5f2944f22562be09450080d4c  DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo-Cursor-Enhanced.mp4
+69c2906303d5ec4630987b9583cd14ec36ed73f4da68e19a31f0849af78c6120  DEMO/Backup/Original-Complete-Buyer-Demo-UNCHANGED.mp4
