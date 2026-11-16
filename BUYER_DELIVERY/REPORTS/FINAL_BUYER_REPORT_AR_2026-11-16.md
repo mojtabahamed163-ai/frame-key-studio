@@ -52,3 +52,8 @@
 [سجل التفاعل الكامل](https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/REPORTS/BUYER_DEMO_INTERACTION_LOG_2026-11-16-ZIP.md)
 [تقرير FFprobe للعرض](https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/VERIFICATION/Frame-and-Key-Studio-Complete-Buyer-Demo-ZIP-2026-11-16.ffprobe.json)
 [تقرير FFprobe للتصدير](https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/VERIFICATION/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.ffprobe.json)
+
+
+## الأدلة الوسيطة المحفوظة
+
+تمت إضافة جميع التسجيلات الوسيطة التي نتجت أثناء إكمال العرض إلى المستودع دون حذف أو استبدال أي دليل سابق: `attempt-5-import-selector-failure.webm`، `attempt-6-source-transfer-limit.webm`، `attempt-7-translation-selector-failure.webm`، `attempt-8-zip-disabled-no-selection.webm`، و`attempt-9-zip-budget-1080p.webm`. هذه الملفات توثق توقفات الأتمتة أو إعدادات ما قبل النجاح، وليست بدائل عن العرض النهائي.
