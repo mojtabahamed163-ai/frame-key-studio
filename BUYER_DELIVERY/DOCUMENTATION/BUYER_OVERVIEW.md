@@ -36,9 +36,9 @@ The repository includes the React/TypeScript/Vite client, the local Studio imple
 
 ## What the buyer receives in this package
 
-The package contains a genuine 6:54 source WebM, two preserved screen-recording artifacts measured at 2:15.520 and 2:22.960, an edited 2:24.533 buyer-demo MP4, a verified source-language-caption export, a verified bilingual Arabic export, reports, checksums, decoded inspection frames, and installation/handoff documentation.
+The package contains a genuine 6:54 source WebM, two preserved screen-recording artifacts measured at 2:15.520 and 2:22.960, an edited 2:24.533 buyer-demo MP4, verified source-language, bilingual Arabic, and recreated Spanish exports, reports, checksums, decoded inspection frames, and installation/handoff documentation.
 
-The requested original 70-second recording, a new 5–8 minute continuous recording, and the requested application-generated Spanish WebM were not found or produced. They are explicitly marked as missing; no other language export is mislabeled as Spanish.
+The requested original 70-second recording and a new 5–8 minute continuous recording remain missing. The application-generated Spanish WebM was recreated from the preserved source through the real Studio workflow and independently verified; it is a selected 28.989-second clip with 110 translated caption lines, not a full-length source export. No other language export is mislabeled as Spanish.
 
 ## Production work still necessary
 

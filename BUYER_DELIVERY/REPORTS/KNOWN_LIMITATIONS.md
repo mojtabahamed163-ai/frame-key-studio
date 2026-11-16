@@ -3,7 +3,7 @@
 1. The requested original 70-second screen recording was not found.
 2. A new continuous 5–8 minute end-to-end recording was not produced in this run.
 3. The preserved genuine recordings are approximately 2:15.520 and 2:22.960; neither should be described as a complete 5–8 minute demonstration.
-4. The requested `Frame_and_Key_Studio_Translated_ES_Export.webm` was not found. Historical reports document Spanish translation in the live UI, but there is no Spanish export artifact to probe or visually verify.
+4. The requested Spanish export was recovered by re-running the real application workflow on the preserved source. The supplied artifact is a selected 28.989-second clip, not a full 6:54 source-length export; translation completed for 110 timed lines and remains machine-generated.
 5. The available new buyer-demo recording documents an export failure, and its screen-recording audio track is absent. Do not claim that it contains audio.
 6. Whisper is a draft and may require human correction for names, punctuation, timing, accents, and difficult audio.
 7. Machine translation may contain linguistic errors and uses phrase-level timing rather than word-level translation alignment.

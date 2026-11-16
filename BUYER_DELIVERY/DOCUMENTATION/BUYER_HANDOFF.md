@@ -20,7 +20,7 @@ Do not commit `.env` files, credentials, model weights, private media, database 
 
 - `DEMO/` contains preserved genuine recordings, an edited buyer-demo container, and explicit notices for the missing 70-second and new 5–8 minute recordings.
 - `SOURCE/` contains the genuine 6:54 source WebM used by the earlier buyer evidence.
-- `EXPORTS/` contains a verified source-language-caption WebM and a verified bilingual Arabic WebM. The requested Spanish export is explicitly marked not found.
+- `EXPORTS/` contains verified source-language and bilingual Arabic WebM files plus `Frame_and_Key_Studio_Translated_ES_Export.webm`, recreated from the genuine source through the real local Studio workflow and independently checked. It is a selected 28.989-second Spanish-captioned clip.
 - `REPORTS/` contains status, verification, probe, checksum, feature, and limitation reports.
 - `VERIFICATION/` contains generated probe/decode records and representative frames.
 
