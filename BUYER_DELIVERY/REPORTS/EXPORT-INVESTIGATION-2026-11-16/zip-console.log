@@ -1,0 +1,13 @@
+2026-11-16T20:33:48.981Z CONSOLE debug [vite] connecting...
+2026-11-16T20:33:48.999Z CONSOLE debug [vite] connected.
+2026-11-16T20:33:49.125Z CONSOLE info %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+2026-11-16T20:33:50.701Z REQUESTFAILED blob:http://127.0.0.1:3000/f16e2470-9c20-408c-bfd2-8362aab120ca net::ERR_ABORTED
+2026-11-16T20:33:52.484Z REQUESTFAILED blob:http://127.0.0.1:3000/f16e2470-9c20-408c-bfd2-8362aab120ca net::ERR_ABORTED
+2026-11-16T20:33:52.521Z CONSOLE log [Frame & Key export] start {format: webm-vp9, fileBytes: 71813058, clipStart: 0, clipEnd: 5, ranges: Array(1)}
+2026-11-16T20:33:52.522Z CONSOLE log [Frame & Key export] measurePeak:start {enabled: false}
+2026-11-16T20:33:52.522Z CONSOLE log [Frame & Key export] measurePeak:done {peak: 0}
+2026-11-16T20:33:52.524Z CONSOLE log [Frame & Key export] Conversion.init:start 
+2026-11-16T20:33:52.761Z CONSOLE log [Frame & Key export] Conversion.init:done {isValid: true, discardedTracks: Array(0)}
+2026-11-16T20:33:52.762Z CONSOLE log [Frame & Key export] Conversion.execute:start 
+2026-11-16T20:33:57.748Z CONSOLE log [Frame & Key export] Conversion.execute:done {outputState: finalized}
+2026-11-16T20:33:57.750Z CONSOLE log [Frame & Key export] BufferTarget:done {bytesWritten: 2829717}

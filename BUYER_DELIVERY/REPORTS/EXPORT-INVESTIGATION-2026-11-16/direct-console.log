@@ -1,0 +1,5 @@
+2026-11-16T20:30:44.616Z CONSOLE debug [vite] connecting...
+2026-11-16T20:30:44.637Z CONSOLE debug [vite] connected.
+2026-11-16T20:30:44.760Z CONSOLE info %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+2026-11-16T20:30:46.383Z REQUESTFAILED blob:http://127.0.0.1:3000/789ccf86-2133-40fa-a23b-3e2c35e4e574 net::ERR_ABORTED
+2026-11-16T20:30:48.224Z REQUESTFAILED blob:http://127.0.0.1:3000/789ccf86-2133-40fa-a23b-3e2c35e4e574 net::ERR_ABORTED
