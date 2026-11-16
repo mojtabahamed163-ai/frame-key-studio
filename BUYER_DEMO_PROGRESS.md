@@ -25,3 +25,9 @@ Attempt 1 evidence is preserved at `BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-1
 ## Final attempt — ZIP workaround
 
 The final buyer demo will use the verified `Render selected + ZIP` path only. It will not click `Export selected clip`. The final recording and extracted WebM will use new filenames and will preserve all prior evidence. The recording will end only after the actual downloaded ZIP is extracted, the WebM is opened in Chromium, and FFprobe verifies the extracted file.
+
+## Final ZIP-workaround delivery — complete
+
+- A new continuous recording completed the real source import, local Whisper, suggestions, caption edit, Spanish translation, vertical 9:16 preview, clip selection, `Render selected + ZIP`, actual ZIP download, extraction, and opening of an extracted WebM in Chromium.
+- Final MP4, raw recording, ZIP, extracted WebM set, FFprobe JSON, and interaction log are staged under `BUYER_DELIVERY/` with new filenames; previous recordings and buyer files remain preserved.
+- Direct `Export selected clip` was not used in the final demo. No application source files were modified.

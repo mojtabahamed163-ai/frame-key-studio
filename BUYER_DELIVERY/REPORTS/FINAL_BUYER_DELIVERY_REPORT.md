@@ -85,3 +85,20 @@ Previously documented direct links remain available on the delivery branch:
 - Previously recreated Spanish export: `https://github.com/mojtabahamed163-ai/frame-key-studio/raw/buyer-delivery-2026-11-16/BUYER_DELIVERY/EXPORTS/Frame_and_Key_Studio_Translated_ES_Export.webm`
 
 The original base-package commit was `9405355519cb3376230f6482316c2a3b9cdbeabe`; the branch tip at the start of this update was `9c66be5902f62d5d7ddfa36e81b4455e5cd678cb`. The final delivery commit is the subsequent pushed branch tip and is stated in the completion message.
+
+
+## Final ZIP-workaround buyer demo — completed 2026-11-16
+
+The final continuous capture is `BUYER_DELIVERY/DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo-ZIP-2026-11-16.mp4`. It is 163.400 seconds, H.264/yuv420p, 1920×1080, 25/1 fps, video-only; full FFmpeg decode exited 0. The raw continuous screen capture is preserved at `BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-16/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm`. Earlier UI-only and failed-attempt recordings remain preserved under the same raw-recording directory.
+
+This recording shows the real original source import, local Whisper transcription, suggested clips, caption edit, English→Spanish local translation, 9:16 preview, clip selection, `Render selected + ZIP`, actual ZIP download, extraction of WebM files, and opening an extracted WebM in Chromium. The direct `Export selected clip` button was not used. The ZIP contained three actual WebM exports; all three are retained under `BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16-extracted/`. The canonical translated export is `BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm`, copied byte-for-byte from the extracted first clip. FFprobe reports VP9 video plus Opus audio, 608×1080, 30 fps, 28.989 seconds; full FFmpeg decode exited 0. The exact ZIP and opened-in-Chromium clip are also retained.
+
+Direct links on `buyer-delivery-2026-11-16`:
+
+- Final demo MP4: `https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo-ZIP-2026-11-16.mp4`
+- Raw continuous recording: `https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/DEMO/Playwright-Raw-2026-11-16/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm`
+- Canonical extracted translated WebM: `https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm`
+- Downloaded ZIP: `https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.zip`
+- Interaction log: `https://raw.githubusercontent.com/mojtabahamed163-ai/frame-key-studio/buyer-delivery-2026-11-16/BUYER_DELIVERY/REPORTS/BUYER_DEMO_INTERACTION_LOG_2026-11-16-ZIP.md`
+
+No application source files were modified. The earlier direct-export timeout report remains preserved and is superseded as a delivery blocker by this verified ZIP path.

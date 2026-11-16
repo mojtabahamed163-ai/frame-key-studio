@@ -17,3 +17,15 @@ Existing demo videos and buyer delivery files were preserved. No application sou
 ## Export investigation
 
 A targeted export-only investigation found that direct `showSaveFilePicker` export is cancelled before `exportClip` starts in Chromium headless/Playwright. The existing ZIP path completes the same real WebM conversion successfully without application changes. See [the technical investigation report](EXPORT_TIMEOUT_INVESTIGATION_2026-11-16_AR.md).
+
+
+## Final status update — ZIP workaround completed
+
+The earlier timeout checkpoint above remains preserved as historical evidence. It is now superseded for delivery by the final continuous ZIP-workaround recording:
+
+- Final MP4: `../DEMO/Frame-and-Key-Studio-Complete-Buyer-Demo-ZIP-2026-11-16.mp4` — H.264, 1920×1080, 25 fps, 163.400 seconds; full decode passed.
+- Raw capture: `../DEMO/Playwright-Raw-2026-11-16/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm`.
+- Downloaded ZIP: `../EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.zip` — 30,045,285 bytes.
+- Extracted canonical WebM: `../EXPORTS/Frame-and-Key-Studio-Buyer-Demo-ZIP-2026-11-16.webm` — VP9/Opus, 608×1080, 30 fps, 28.989 seconds; FFprobe and full decode passed.
+
+The final recording visibly reaches `Render selected + ZIP`, waits for the real finished-files state, clicks `Download all as ZIP`, preserves the actual download, extracts the WebM files, and opens an extracted WebM in Chromium. The direct `Export selected clip` path was not used, and application source remains unchanged.
